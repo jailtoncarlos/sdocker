@@ -82,11 +82,14 @@ RUN tar -xvf /root/wkhtmltox.tar.xz -C /root && \
 
 # Instala o Google Chrome Stable e configura o ChromeDriver para
 # testes automatizados
+# Download Google’s Signing Key
 # Adiciona a chave GPG do Google e o repositório para o Chrome
-RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - && \
+# Adicionar o repositório do Google Chrome às fontes de software do sistema
+# https://www.google.com/linuxrepositories/
+RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor | tee /etc/apt/trusted.gpg.d/google.gpg >/dev/null && \
     echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list
 
-
+# Atualiza a lista de pacotes
 # Instala o navegador Google Chrome Stable
 RUN apt-get update && apt-get install -yqq \
     --fix-missing --no-install-recommends \

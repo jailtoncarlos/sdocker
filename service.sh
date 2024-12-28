@@ -2081,11 +2081,13 @@ function service_logs() {
 
   if [ "$_service_name" = "all" ]; then
     echo_info "Status dos serviços"
+    echo ">>> $COMPOSE logs -f $_option"
     $COMPOSE logs -f $_option
   else
     if ! is_container_running "$_service_name"; then
       echo_warning "Container $_service_name não está em execução!"
     fi
+    echo ">>> $COMPOSE logs -f $_option $_service_name"
     $COMPOSE logs -f $_option "$_service_name"
   fi
 }
@@ -2095,16 +2097,16 @@ function service_stop() {
   local _service_name=$1
   echo ">>> ${FUNCNAME[0]} $_service_name $_option"
 
-  # Para o segundo caso com _service_name
-  declare -a _name_services
-  dict_get_and_convert "$_service_name" "${DICT_SERVICES_DEPENDENCIES[*]}" _name_services
-
-  for _nservice in "${_name_services[@]}"; do
-    if docker container ls | grep -q "${COMPOSE_PROJECT_NAME}-${_nservice}-1"; then
-      echo ">>> docker stop ${COMPOSE_PROJECT_NAME}-${_nservice}-1"
-      docker stop ${COMPOSE_PROJECT_NAME}-${_nservice}-1
-    fi
-  done
+#  # Para o segundo caso com _service_name
+#  declare -a _name_services
+#  dict_get_and_convert "$_service_name" "${DICT_SERVICES_DEPENDENCIES[*]}" _name_services
+#
+#  for _nservice in "${_name_services[@]}"; do
+#    if docker container ls | grep -q "${COMPOSE_PROJECT_NAME}-${_nservice}-1"; then
+#      echo ">>> docker stop ${COMPOSE_PROJECT_NAME}-${_nservice}-1"
+#      docker stop ${COMPOSE_PROJECT_NAME}-${_nservice}-1
+#    fi
+#  done
   if docker container ls | grep -q "${COMPOSE_PROJECT_NAME}-${_service_name}-1"; then
     echo ">>> docker stop ${COMPOSE_PROJECT_NAME}-${_service_name}-1"
     docker stop ${COMPOSE_PROJECT_NAME}-${_service_name}-1
@@ -2817,15 +2819,18 @@ function command_db_psql() {
 
 # Função que será chamada quando o script for interrompido
 function handle_sigint {
-  local _option="${@:2}"
-  local _service_name=$1
-  echo ">>> ${FUNCNAME[0]} $_service_name $_option"
+  echo_warning "Interrompido com Ctrl+C. "
+  echo ">>> ${FUNCNAME[0]} $ARG_SERVICE $ARG_COMMAND $ARG_OPTIONS"
 
-  echo "Interrompido com Ctrl+C. "
-  if [ $ARG_COMMAND = "up" ]; then
-   service_stop "${_service_name}" "$ARG_OPTIONS"
+  local _service_name=$(get_server_name "$ARG_SERVICE")
+
+  if [ "$ARG_COMMAND" = "up" ]; then
+    if docker container ls | grep -q "${COMPOSE_PROJECT_NAME}-${_service_name}-1"; then
+      echo ">>> docker stop ${COMPOSE_PROJECT_NAME}-${_service_name}-1"
+      docker stop ${COMPOSE_PROJECT_NAME}-${_service_name}-1
+    fi
   fi
-  exit 1
+  exit 0
 }
 
 # Configura o trap para capturar o sinal SIGINT (Ctrl+C)
