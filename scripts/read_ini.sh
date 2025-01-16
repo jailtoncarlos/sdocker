@@ -23,8 +23,13 @@ function read_ini() {
     local section=$2
     local key=$3
 
-    # Primeiro, encontrar a seção correta
-    value=$(sed -nr "/^\[$section\]/,/^\[/{/^$key[ ]*=/ s/.*=[ ]*//p}" "$file")
+    # Usa delimitadores alternativos para evitar conflitos com `/`
+    value=$(awk -F= -v section="$section" -v key="$key" '
+        $0 ~ "\\[" section "\\]" {in_section=1; next}
+        in_section && $0 ~ "^\\[" {in_section=0}
+        in_section && $1 ~ key {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit}
+    ' "$file")
+
     echo "$value"
 }
 
