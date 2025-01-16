@@ -13,7 +13,7 @@ function check_and_load_scripts() {
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   scriptsh="$script_dir/${filename_script}"
-  scriptsh="${scriptsh//\/\//\/}"  # Remove barras duplas
+  scriptsh=$(echo "$scriptsh" | sed 's/\/\//\//g') # Remove barras duplas
 
   if [ ! -f "$scriptsh" ]; then
     echo -e "$RED_COLOR DANG: Shell script $scriptsh não existe.\nEsse arquivo possui as funções utilitárias necessárias.\nImpossível continuar!$NO_COLOR"

@@ -977,14 +977,17 @@ function os_path_join() {
     # Garante que mantenha a barra inicial se o primeiro segmento for absoluto
     [[ "${1:0:1}" == "/" ]] && path="/${path}"
 
-    # Remove redundâncias como "/./" e ajusta o resultado
-    echo "$(realpath -m "$path")"
+    # Remove redundâncias manualmente, como "/./" e "//"
+    path=$(echo "$path" | sed 's:/\./:/:g; s://:/:g; s:/$::')
+
+    echo "$path"
 
     # Exemplo de chamada:
     # final_path=$(os_path_join "/home" "/jailton/" "workstation//" "./djud/djud")
     # echo "$final_path"
-    ## Saída: /home/jailton/workstation/djud/djud
+    ## Saída esperada: /home/jailton/workstation/djud/djud
 }
+
 
 ##############################################################################
 ### TRATAMENTOS PARA PLUGINS DE EXTENSÕES
