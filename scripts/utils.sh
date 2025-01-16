@@ -993,21 +993,23 @@ function os_path_join() {
 ### TRATAMENTOS PARA PLUGINS DE EXTENSÕES
 ##############################################################################
 function extension_exec_script() {
-  local inifile_path=$1
-  local command=$2
-  local arg_command=$3
+  local inifile_path="$1"
+  local command="$2"
+  local arg_command="$3"
   local options="${*:4}" # Pega todos os argumentos a partir do quarto
 
   local arg_count=$#
   local script_path_or_url=""
   local dir_path=""
   local url=""
-
   local script_name="${arg_command}.sh"
 
-  echo ">>> ${FUNCNAME[0]} $inifile_path $command $arg_command $optionss"
+  echo ">>> ${FUNCNAME[0]} $inifile_path $command $arg_command $options"
 
-  declare -a comandos_disponiveis
+  # Substituir `declare -a` por arrays normais
+  local comandos_disponiveis=()
+
+  # Preencher o array com as chaves disponíveis na seção do arquivo INI
   list_keys_in_section "$inifile_path" "extensions" comandos_disponiveis
 
   if [ -z "$arg_command" ]; then
@@ -1024,19 +1026,9 @@ function extension_exec_script() {
       exit 1
     else
       script_path_or_url=$(get_filename_path "$PROJECT_DEV_DIR" "$inifile_path" "extensions" "$arg_command")
-#      echo_warning "Executando script $script_path_or_url"
 
       # Verifica se o arquivo existe
       if [ ! -f "$script_path_or_url" ]; then
-          # Explicação
-          # 1. ^https?://: Verifica se a variável começa com http:// ou https://
-          #   (URLs HTTP ou HTTPS). O ? indica que o s é opcional.
-          # 2.^[^@]+@[^:]+:.+: Verifica o formato SSH (usuario@host:repositorio).
-          #   Esse regex assegura que há:
-          #   - [^@]+: Um conjunto de caracteres antes do @.
-          #   - @: Um caractere @ obrigatório.
-          #   - [^:]+: Um conjunto de caracteres antes do : obrigatório.
-          #   - :.+: Um : seguido por mais caracteres.
           if echo "$script_path_or_url" | grep -qE '^https?://'; then
               echo_info "URL HTTP(S) detectada: $script_path_or_url"
           elif echo "$script_path_or_url" | grep -qE '^[^@]+@[^:]+:.+'; then
@@ -1048,10 +1040,6 @@ function extension_exec_script() {
           fi
           url=$script_path_or_url
 
-          # Como foi passado a url do script, torna-se obrigatório informar
-          # um path para onde o projeto será gerado.
-          # %% *: Remove tudo após o primeiro espaço encontrado na string option,
-          # retornando apenas o primeiro argumento.
           dir_path="${options%% *}"
           if [ -z "$dir_path" ]; then
             echo_error "Diretório não informado."
@@ -1065,35 +1053,22 @@ function extension_exec_script() {
             exit 1
           fi
 
-           echo "--- Iniciando o download do script $script_path_or_url no
-           diretório $dir_path ..."
+          echo "--- Iniciando o download do script $script_path_or_url no diretório $dir_path ..."
 
-          # Obter o segmento da url após a última barra
           url_last_part=$(basename "$url")
           dir_destination_path=$(os_path_join "$dir_path" "$url_last_part")
 
-          # Tenta clonar o repositório
           git clone "$url" "$dir_destination_path"
-          # Código de erro 128 para "path already exists and is not empty"
           if [[ $? -eq 128 ]]; then
             echo_warning "Diretório $dir_destination_path já existe e não está vazio."
           fi
 
           script_path=$(os_path_join "$dir_destination_path" "$script_name")
 
-          # Verifica se o clone foi bem-sucedido
           if [ -f "$script_path" ]; then
-              # Dá permissão de execução
               chmod +x "$script_path"
           else
               echo_error "Erro: O script $script_path não foi encontrado."
-              echo_info "Possíveis causas:
-              1. Verifique se o arquivo de script existe no repositório local,
-              diretório \"${dir_destination_path}\".
-              2. Verifique se o arquivo existe no repositório ou se seu nome foi
-              renomeado. Se sim, atualize o repositório local
-              git pull origin <<branch>>
-              3. Se o script foi removido, entre em contato com o autor do script."
               exit 1
           fi
       else
@@ -1101,10 +1076,7 @@ function extension_exec_script() {
       fi
 
       echo_info "Script $script_path detectado. Iniciando a execução..."
-      if [ -x "$script_path" ]; then
-            # Dá permissão de execução
-            chmod +x "$script_path"
-      fi
+      chmod +x "$script_path"
 
       if [ -f "$script_path" ]; then
         echo ">>> $script_path $options"
@@ -1146,48 +1118,38 @@ function check_command_status_on_error_exit() {
 }
 
 function verificar_comando_inicializacao_ambiente_dev() {
-# Função para verificar o comando de inicialização da aplicação no ambiente de desenvolvimento
+    # Função para verificar o comando de inicialização da aplicação no ambiente de desenvolvimento
     local root_dir="$1"
     local ini_file_path="$2"
     local tipo_projeto=""
     local mensagem=""
 
-    # Declaração do dicionário
-    declare -A environment_conditions
+    # Array para armazenar pares chave:condição
+    local environment_conditions=()
 
-    # Chamada da função para preencher o dicionário com a seção "environment_dev_existence_condition"
+    # Ler a seção "environment_dev_existence_condition" e preencher o array
     if read_section "$ini_file_path" "environment_dev_existence_condition" environment_conditions; then
-        # Itera sobre o dicionário para exibir as chaves e valores
-        # O operador ! é usado em conjunto com arrays para acessar as chaves
-        # (ou índices) de um array associativo ou numérico, em vez dos valores.
-        for key in "${!environment_conditions[@]}"; do
-            condicao="${environment_conditions[$key]}"
+        # Itera sobre os pares chave:condição
+        for entry in "${environment_conditions[@]}"; do
+            local key="${entry%%:*}"          # Chave antes do ":"
+            local condicao="${entry#*:}"      # Valor após o ":"
+
+            # Avalia a condição
             if eval "$condicao"; then
-              mensagem=$(read_ini "$ini_file_path" "environment_dev_names" $key | tr -d '\r')
-              echo "$key $mensagem"
-              return 0
+                mensagem=$(read_ini "$ini_file_path" "environment_dev_names" "$key" | tr -d '\r')
+                echo "$key $mensagem"
+                return 0
             fi
         done
     else
-      echo "Erro: Seção não encontrada ou arquivo não existe."
-      return 1
+        echo "Erro: Seção não encontrada ou arquivo não existe."
+        return 1
     fi
+
     echo "INDEFINIDO Não foram encontrados arquivos ou diretórios que indiquem a presença de um ambiente de desenvolvimento."
     return 1
-
-    # Exemplo de uso:
-    # result=$(verificar_comando_inicializacao_ambiente_dev "$PROJECT_ROOT_DIR" "$INIFILE_PATH")
-    # _return_func=$?  # Captura o valor de retorno da função
-    # read tipo_projeto mensagem <<< "$result"
-    #
-    # if [ _return_func -gt 0 ]; then
-    #    echo "Erro: $mensagem"
-    #    exit 1
-    # else
-    #    echo "Tipo de projeto: $tipo_projeto"
-    #    echo "Mensagem: $mensagem"
-    # fi
 }
+
 
 function create_pre_push_hook() {
   local compose_project_name="$1"

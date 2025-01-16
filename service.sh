@@ -286,6 +286,7 @@ if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ]; then
       "$INIFILE_PATH" \
       "$LOCAL_INIFILE_PATH"
 fi
+
 ##############################################################################
 ### EXPORTANDO VARIÁVEIS DE AMBIENTE DO ARQUIVO ENV
 ##############################################################################
@@ -341,6 +342,7 @@ configura_env() {
   # Imprime as variáveis de ambiente
   # imprime_variaveis_env "${project_env_path_file}"
 }
+
 
 if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ]; then
   configura_env "$PROJECT_ENV_FILE_SAMPLE" "$PROJECT_ENV_PATH_FILE"
@@ -622,6 +624,7 @@ if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ]; then
     fi
   fi
 fi
+
 ##############################################################################
 ### Tratamento para os arquivos docker-compose-base.yml, docker-compose.yml e Dockerfile
 ##############################################################################
