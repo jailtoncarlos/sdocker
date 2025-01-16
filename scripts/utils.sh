@@ -218,66 +218,63 @@ function string_to_array() {
 
 function convert_semicolon_to_array() {
   local _value="$1"
-  local -n _array_ref="$2"  # Usando nameref para passar o array por referência
+  local _array_name="$2"  # Nome do array passado como string
 
-  # Substitui os  ";" (pontos e vírgulas) por espaços: O operador ${_value//;/ } faz uma substituição de todos os ; por espaços.
-  _array_ref=(${_value//;/ })
+  # Substitui os ";" (pontos e vírgulas) por espaços
+  local _converted="${_value//;/ }"
 
-  # Exemplo de uso:
-  #SERVICES="web;vpn;db;redis"
-  #ARRAY_RESULT=()
-  #
-  #convert_semicolon_to_array "$SERVICES" ARRAY_RESULT
-  #
-  ## Verifica o conteúdo do array:
-  #echo "${ARRAY_RESULT[@]}"
+  # Preenche o array dinamicamente usando eval
+  eval "$_array_name=(\$_converted)"
+
+#
+## Exemplo de uso:
+#SERVICES="web;vpn;db;redis"
+#ARRAY_RESULT=()
+#
+#convert_semicolon_to_array "$SERVICES" ARRAY_RESULT
+#
+## Verifica o conteúdo do array:
+#echo "Elementos do array:"
+#for element in "${ARRAY_RESULT[@]}"; do
+#  echo "$element"
+#done
+
 }
 
 function convert_multiline_to_array() {
   local multiline_string="$1"
-  local -n array_ref="$2"  # Utiliza 'nameref' para passar o array por referência
+  local array_name="$2"  # Nome do array como string
 
   # Modifica o IFS para tratar as quebras de linha como delimitadores
   IFS=$'\n'
 
-  # Itera sobre cada linha da string e armazena no array
+  # Itera sobre cada linha da string e adiciona ao array usando 'eval'
   for line in $multiline_string; do
-      array_ref+=("$line")
+      eval "$array_name+=('$line')"
   done
 
   # Reseta o IFS para o valor padrão
   unset IFS
-
-  # Exemplo de uso:
-  #
-  #SERVICES_DEPENDENCIES="
-  #web:vpn;db;redis
-  #db:vpn;pgadmin
-  #"
-  #
-  #DICT_SERVICES_DEPENDENCIES=()
-  #
-  ## Chama a função para converter a string multilinha em array
-  #convert_multiline_to_array "$SERVICES_DEPENDENCIES" DICT_SERVICES_DEPENDENCIES
 }
 
 function dict_get_and_convert() {
   local _argkey=$1
   local _dict=$2
-  local -n _result_array=$3  # Array de saída passado por referência
+  local _result_array_name=$3  # Nome do array de saída passado como string
 
   # Obtém o valor do dicionário, retorna uma string com separadores ";"
   _dict_value=$(dict_get "$_argkey" "$_dict")
 
   if [ -n "$_dict_value" ]; then
     # Converte a string para um array, separando pelos pontos e vírgula
-    IFS=";" read -ra _result_array <<< "$_dict_value"
+    eval "$_result_array_name=(\$(IFS=';' && echo \$_dict_value))"
   else
     # Retorna um array vazio se a chave não for encontrada
-    _result_array=()
+    eval "$_result_array_name=()"
     return 0
   fi
 }
+
 
 ##############################################################################
 ### FUNÇÕES RELACIONADAS COM INTERAÇÕES COM O POSTGRES
@@ -801,10 +798,10 @@ function get_filename_path() {
 function list_keys_in_section() {
     local ini_file_path="$1"
     local section="$2"
-    local -n keys_array=$3  # O array é passado por referência
+    local array_name="$3"  # Nome do array passado como string
 
-    # Limpa o array antes de popular
-    keys_array=()
+    # Inicializa o array como vazio
+    eval "$array_name=()"
 
     # Extrai as chaves da seção especificada
     while read -r line; do
@@ -812,18 +809,18 @@ function list_keys_in_section() {
             break  # Encerra ao encontrar outra seção
         elif [[ $line =~ ^[^#]*= ]]; then
             key=$(echo "$line" | awk -F= '{print $1}')
-            keys_array+=("$key")  # Adiciona a chave ao array
+            eval "$array_name+=('$key')"  # Adiciona a chave ao array dinamicamente
         fi
     done < <(awk "/^\[$section\]/ {flag=1; next} /^\[/ {flag=0} flag {print}" "$ini_file_path")
 
-#    # Exemplo de uso
-     #declare -a keys
-     #list_keys_in_section "config.ini" "extensions" keys
-     #
-     ## Exibe as chaves
-     #for key in "${keys[@]}"; do
-     #    echo "$key"
-     #done
+# Exemplo de uso
+#declare -a keys
+#list_keys_in_section "config.ini" "extensions" keys
+#
+## Exibe as chaves
+#for key in "${keys[@]}"; do
+#    echo "$key"
+#done
 }
 
 ##############################################################################
