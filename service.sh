@@ -245,7 +245,7 @@ all:docker-compose.yml
 SERVICES_COMMANDS="
 all:deploy;undeploy;redeploy;status;restart;logs;up;down
 web:makemigrations;manage;migrate;shell_plus;debug;build;git;pre-commit;test_behave
-db:psql;wait;dump;restore;copy;build
+db:psql;wait;dump;restore;copy;build;create-role
 node:
 pgadmin:
 redis:
@@ -1674,6 +1674,10 @@ function process_command() {
     database_db_dump "${_service_name}" "$ARG_OPTIONS"
   elif [ "$ARG_COMMAND" = "copy" ]; then
     database_db_scp "${_service_name}" "$ARG_OPTIONS"
+  elif [ "$ARG_COMMAND" = "create-role" ]; then
+    # Removido aspas duplas de 'ARG_OPTIONS' para permitir passagem de
+    # argumentos com espaços
+    database_create_role "${_service_name}" $ARG_OPTIONS
 
   #for web containers
   elif [ "$ARG_COMMAND" = "build" ]; then
@@ -2170,6 +2174,7 @@ function django_migrations_exists() {
   local _psql="psql -h $host -p $port -U $POSTGRES_USER -d $POSTGRES_DB"
 
   # Definindo o comando psql para verificar a presença de migrações
+  # -t: Remove o cabeçalho e as linhas em branco da saída.
   local psql_cmd="$_psql -tc 'SELECT COUNT(*) > 0 FROM django_migrations;'"
 
   psql_output=$($COMPOSE exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$SERVICE_DB_NAME" sh -c "$psql_cmd")
@@ -2285,6 +2290,47 @@ function database_wait() {
   echo_success "Banco de dados \"$POSTGRES_DB\" está pronto para uso."
 }
 
+function database_create_role() {
+  local _option="${@:2}"
+  local _service_name=$SERVICE_DB_NAME
+  echo ">>> ${FUNCNAME[0]} $_service_name $_option"
+
+  if [ $# -gt 2 ]; then
+    echo_error "O número de argumentos é maior que 2."
+    exit 1
+  fi
+
+  if [ -z "$_option" ]; then
+    echo_error "Nome da role não informado."
+    exit 1
+  else
+    role_name=$_option
+  fi
+
+  if ! is_container_running "$_service_name"; then
+    echo_info "Inicializando o container db automaticamente ..."
+    echo ">>> service_up $_service_name $_option -d"
+    service_up $_service_name $_option -d
+  fi
+
+  service_db_wait
+
+  # Monta o comando para criar a role
+  _psql="psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d $POSTGRES_DB"
+  # -t: Remove o cabeçalho e as linhas em branco da saída.
+  psql_cmd="$_psql -c 'CREATE ROLE \"$role_name\"';"
+
+  # Executando o comando dentro do container Docker para criar a role
+  result=$($COMPOSE exec -e PGPASSWORD=$POSTGRES_PASSWORD $_service_name sh -c "$psql_cmd")
+  if [ $? -eq 0 ]; then
+      echo_success "Role '$role_name' criada com sucesso."
+  else
+      echo_error "Erro ao criar a role '$role_name" #>&2
+  fi
+  # Exemplo de uso
+  # criar_role "localhost" 5432 "postgres" "senha123" "nova_role"
+}
+
 function database_db_scp() {
   local _option="${@:2}"
   local _service_name=$SERVICE_DB_NAME
@@ -2324,6 +2370,7 @@ function database_db_dump() {
   _psql="psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER"
 
   # Definindo a consulta para pegar o tamanho do banco de dados
+  # -t: Remove o cabeçalho e as linhas em branco da saída.
   psql_cmd="$_psql -d postgres -tc \"SELECT pg_database_size('$POSTGRES_DB');\""
 
   # Executando o comando dentro do container Docker para obter o tamanho do banco de dados
@@ -2360,7 +2407,9 @@ function database_db_dump() {
 }
 
 function database_db_restore() {
+  local _option="${@:2}"
   local _service_name=$SERVICE_DB_NAME
+
   echo ">>> ${FUNCNAME[0]} $_service_name $_option"
 
   if ! is_container_running "$_service_name"; then
@@ -2380,7 +2429,7 @@ function database_db_restore() {
   local _retorno_func=0
   echo "--- Iniciando processo de restauração do dump ..."
 
-  service_exec "$_service_name" /docker-entrypoint-initdb.d/init_database.sh
+  service_exec "$_service_name" /docker-entrypoint-initdb.d/init_database.sh $_option
 
   # Verifica o código de saída do comando anterior foi executado com sucesso
   _retorno_func=$?
@@ -2423,7 +2472,8 @@ function _service_db_up() {
     # Altera o valor de max_locks_per_transaction no sistema do PostgreSQL
     # temporariamente par a sessão atual: SET max_locks_per_transaction = 250;
     # permanentemente: ALTER SYSTEM SET max_locks_per_transaction = 250;
-    psql="psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d $POSTGRES_DB"
+    _psql="psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d $POSTGRES_DB"
+    # -t: Remove o cabeçalho e as linhas em branco da saída.
     local psql_cmd="$_psql -tc 'ALTER SYSTEM SET max_locks_per_transaction = ${POSTGRES_MAX_LOCKS_PER_TRANSACTION:-250};'"
     $COMPOSE exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$SERVICE_DB_NAME" sh -c "$psql_cmd"
   fi
