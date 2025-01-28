@@ -13,7 +13,7 @@ function check_and_load_scripts() {
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   scriptsh="$script_dir/${filename_script}"
-  scriptsh="${scriptsh//\/\//\/}"  # Remove barras duplas
+  scriptsh=$(echo "$scriptsh" | sed 's/\/\//\//g') # Remove barras duplas
 
   if [ ! -f "$scriptsh" ]; then
     echo -e "$RED_COLOR DANG: Shell script $scriptsh não existe.\nEsse arquivo possui as funções utilitárias necessárias.\nImpossível continuar!$NO_COLOR"
@@ -286,6 +286,7 @@ if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ]; then
       "$INIFILE_PATH" \
       "$LOCAL_INIFILE_PATH"
 fi
+
 ##############################################################################
 ### EXPORTANDO VARIÁVEIS DE AMBIENTE DO ARQUIVO ENV
 ##############################################################################
@@ -342,6 +343,7 @@ configura_env() {
   # imprime_variaveis_env "${project_env_path_file}"
 }
 
+
 if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ]; then
   configura_env "$PROJECT_ENV_FILE_SAMPLE" "$PROJECT_ENV_PATH_FILE"
   _return_func=$?
@@ -378,23 +380,35 @@ convert_multiline_to_array "$ARG_SERVICE_PARSE" DICT_ARG_SERVICE_PARSE
 
 get_dependent_services() {
     local service_name="$1"  # O nome do serviço passado como argumento
-    local -n ref_name_services="$2"  # Nome da variável de array passada por referência
+    local array_name="$2"    # Nome do array passado como string
 
-    # Obtem os serviços que dependem de $service_name e armazena no array passado por referência
-    dict_get_and_convert "$service_name" "${DICT_SERVICES_DEPENDENCIES[*]}" ref_name_services
+    # Inicializa o array como vazio
+    eval "$array_name=()"
+
+    # Obtém os serviços que dependem de $service_name e converte a lista para o array
+    local dependencies
+    dependencies=$(dict_get "$service_name" "${DICT_SERVICES_DEPENDENCIES[*]}")
+
+    # Converte os serviços dependentes para um array
+    if [ -n "$dependencies" ]; then
+        eval "$array_name=(\$(echo \"$dependencies\" | tr ';' ' '))"
+    fi
 
 ## Exemplo de uso
+#DICT_SERVICES_DEPENDENCIES=("service1:dep1;dep2" "service2:dep3")
+#
 #declare -a _name_services  # Declara o array onde o resultado será armazenado
 #
 ## Chama a função passando o nome do serviço e o array por referência
-#get_dependent_services "service_name_exemplo" _name_services
+#get_dependent_services "service1" _name_services
 #
 ## Exibe o conteúdo do array após a chamada
-#echo "Serviços que dependem de service_name_exemplo:"
+#echo "Serviços que dependem de service1:"
 #for service in "${_name_services[@]}"; do
 #    echo "$service"
 #done
 }
+
 ##############################################################################
 ### DEFINIÇÕES DE VARIÁVEIS GLOBAIS
 ##############################################################################
@@ -622,6 +636,7 @@ if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ]; then
     fi
   fi
 fi
+
 ##############################################################################
 ### Tratamento para os arquivos docker-compose-base.yml, docker-compose.yml e Dockerfile
 ##############################################################################
@@ -1483,83 +1498,121 @@ get_service_names() {
 
 # Função para verificar a validade do comando
 function check_command_validity() {
-  local command=$1
+  local command="$1"
   local available_commands=("$2")
   local all_commands_local=("$3")
-  local arg_count=$4
-  local message=$5
+  local arg_count="$4"
+  local message="$5"
 
-  # As variáveis de erro são passadas por referência
-  local -n error_danger_message=$6
-  local -n error_warning_message=$7
+  # Nomes das variáveis de erro passadas como strings
+  local error_danger_message_name="$6"
+  local error_warning_message_name="$7"
 
   local service_name="$8"
 
+  # Inicializar mensagens de erro como vazias
+  eval "$error_danger_message_name=''"
+  eval "$error_warning_message_name=''"
+
   if ! in_array "$command" "${available_commands[*]}" && ! in_array "$command" "${all_commands_local[*]}"; then
-    error_danger_message="${message} [${command}] não existe."
-    if [ ! -z "$service_name" ]; then
-      error_danger_message="${message} [${command}] não existe para o serviço [${service_name}]."
+    local danger_message="${message} [${command}] não existe."
+    if [ -n "$service_name" ]; then
+      danger_message="${message} [${command}] não existe para o serviço [${service_name}]."
     fi
 
-    error_warning_message="${message}s disponíveis: ${available_commands[*]}"
+    local warning_message="${message}s disponíveis: ${available_commands[*]}"
 
-    if [ ! -z "$all_commands_local" ]; then
-      error_warning_message="${message}s disponíveis: \n\t\tcomuns: ${all_commands_local[*]} \n\t\tespecíficos: ${available_commands[*]}"
+    if [ -n "$all_commands_local" ]; then
+      warning_message="${message}s disponíveis: \n\t\tcomuns: ${all_commands_local[*]} \n\t\tespecíficos: ${available_commands[*]}"
     fi
-    return 1 # falha - serviço não existe
+
+    # Atualizar mensagens de erro usando eval
+    eval "$error_danger_message_name=\"\$danger_message\""
+    eval "$error_warning_message_name=\"\$warning_message\""
+
+    return 1 # Falha - comando não existe
   else
-    return 0 # sucesso - serviço existe
+    return 0 # Sucesso - comando existe
   fi
-  return 0 # Sucesso, comando válido
+  return 0
 }
+
 
 # Função para verificar e validar argumentos
 function verify_arguments() {
-  # Copia os argumentos para um array local
-  local arg_service_name=$1
-  local arg_command=$2
+  # Copia os argumentos para variáveis locais
+  local arg_service_name="$1"
+  local arg_command="$2"
   local services_local=("$3")
   local specific_commands_local=("$4")
   local all_commands_local=("$5")
-  local arg_count=$6
+  local arg_count="$6"
 
-  # As variáveis de erro são passadas por referência
-  local -n error_message_danger=$7
-  local -n error_message_warning=$8
+  # Nomes das variáveis de erro passadas como strings
+  local error_message_danger_name="$7"
+  local error_message_warning_name="$8"
 
-  declare -a empty_array=()
+  # Inicializa as mensagens de erro como vazias
+  eval "$error_message_danger_name=''"
+  eval "$error_message_warning_name=''"
 
-  if [ $arg_count -eq 0 ]; then
-    error_message_danger="Argumento [NOME_SERVICO] não informado."
-    error_message_warning="Serviços disponíveis: ${services_local[@]}"
+  local empty_array=()
+
+  if [ "$arg_count" -eq 0 ]; then
+    eval "$error_message_danger_name='Argumento [NOME_SERVICO] não informado.'"
+    eval "$error_message_warning_name='Serviços disponíveis: ${services_local[*]}'"
     return 1 # falha
   fi
 
   # Verifica se o serviço existe
-  check_command_validity "$arg_service_name" "${services_local[*]}" "${empty_array[*]}" "$arg_count" "Serviço" error_message_danger error_message_warning
+  check_command_validity "$arg_service_name" "${services_local[*]}" "${empty_array[*]}" "$arg_count" "Serviço" \
+    "$error_message_danger_name" "$error_message_warning_name"
   local _service_ok=$?
-  if [ $_service_ok -eq 1 ]; then
-    return 1 #falha
+  if [ "$_service_ok" -eq 1 ]; then
+    return 1 # falha
   fi
 
-  if [ $arg_count -eq 1 ]; then
-    if [ $_service_ok -eq 0 ]; then # serviço existe
-      error_message_danger="Argumento [COMANDOS] não informado."
-      error_message_warning="Service $arg_service_name
+  if [ "$arg_count" -eq 1 ]; then
+    if [ "$_service_ok" -eq 0 ]; then # serviço existe
+      eval "$error_message_danger_name='Argumento [COMANDOS] não informado.'"
+      eval "$error_message_warning_name='Service $arg_service_name
           Comandos disponíveis:
               Comuns: ${all_commands_local[*]}
-              Específicos: ${specific_commands_local[*]}"
+              Específicos: ${specific_commands_local[*]}'"
     fi
     return 1 # falha
   fi
 
   # Verifica se o comando para o serviço existe.
-  check_command_validity "$arg_command" "${specific_commands_local[*]}" "${all_commands_local[*]}" "$arg_count" "Comando" error_message_danger error_message_warning "$arg_service_name"
+  check_command_validity "$arg_command" "${specific_commands_local[*]}" "${all_commands_local[*]}" "$arg_count" "Comando" \
+    "$error_message_danger_name" "$error_message_warning_name" "$arg_service_name"
   local _command_ok=$?
-  if [ $_command_ok -eq 1 ]; then
-    return 1 #falha
+  if [ "$_command_ok" -eq 1 ]; then
+    return 1 # falha
   fi
-  return 0 #sucesso
+  return 0 # sucesso
+
+## Variáveis para mensagens de erro
+#error_message_danger=""
+#error_message_warning=""
+#
+## Listas de serviços e comandos
+#services=("service1" "service2")
+#specific_commands=("start" "stop")
+#all_commands=("status" "reload")
+#
+## Chamada da função
+#verify_arguments "service1" "start" services[@] specific_commands[@] all_commands[@] 2 \
+#    error_message_danger error_message_warning
+#result=$?
+#
+#if [ $result -eq 0 ]; then
+#    echo "Verificação bem-sucedida."
+#else
+#    echo "Erro grave: $error_message_danger"
+#    echo "Aviso: $error_message_warning"
+#fi
+
 }
 
 function imprimir_orientacao_uso() {
