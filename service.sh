@@ -193,10 +193,13 @@ function verifica_e_configura_env() {
 
 # Criar  arquivo env sample e inserir as variáveis na ordem inversa
 cat <<EOF > "$project_env_file_sample"
+COMPOSE_PROJECT_NAME=${project_name}
+
 REVISADO=false
 LOGINFO=false
+DISABLE_DEV_ENV_CHECK=false
+DISABLE_DOCKERFILE_CHECK=false
 
-COMPOSE_PROJECT_NAME=${project_name}
 DEV_IMAGE=
 PYTHON_BASE_IMAGE=python:3.12-slim-bullseye
 POSTGRES_IMAGE=postgres:16.3
@@ -222,7 +225,6 @@ BASE_DIR=${default_base_dir}
 
 WORK_DIR=/opt/app
 
-DISABLE_DOCKERFILE_CHECK=false
 DOCKERFILE=${default_project_dockerfile}
 
 USER_NAME=$(id -un)
@@ -237,7 +239,6 @@ BEHAVE_BROWSER=chrome
 BEHAVE_CHROME_HEADLESS=true
 SELENIUM_GRID_HUB_URL=http://selenium_grid:4444/wd/hub
 TEMPLATE_TESTDB=template_testdb
-
 
 COMPOSES_FILES="
 all:docker-compose.yml
@@ -261,6 +262,7 @@ pgadmin:db
 ARG_SERVICE_PARSE="
 web:django
 "
+SDOCKER_PATH=$SCRIPT_DIR
 EOF
             echo_success "Arquivo $project_env_file_sample criado."
         fi
