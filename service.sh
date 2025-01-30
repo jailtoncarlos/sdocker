@@ -195,6 +195,7 @@ function verifica_e_configura_env() {
 cat <<EOF > "$project_env_file_sample"
 COMPOSE_PROJECT_NAME=${project_name}
 
+SDOCKER_PATH=$SCRIPT_DIR
 REVISADO=false
 LOGINFO=false
 DISABLE_DEV_ENV_CHECK=false
@@ -231,8 +232,21 @@ USER_NAME=$(id -un)
 USER_UID=$(id -u)
 USER_GID=$(id -g)
 
+# Variáveis utilizadas para adicionar uma rota no container "DB" para o container VPN
 VPN_GATEWAY=${default_vpn_gateway_ip}
 VPN_GATEWAY_FAIXA_IP=${default_vpn_gateway_faixa_ip}
+ROUTE_NETWORK=
+
+# Variáveis necessárias para poder realizar a cópia do dump do banco do host remoto para local host.
+DOMAIN_NAME=dns.domain.local
+DATABASE_REMOTE_HOST=database_name_remote_host
+
+# Variáveis usadas para adiciona uma nova entrada no arquivo /etc/hosts no container DB,
+# permitindo que o sistema resolva nomes de dominío para o endereço IP especificado.
+ETC_HOSTS="
+dns1.domain.local:10.10.1.144
+dns2.ifrn.local:10.10.1.244
+"
 
 BEHAVE_CHROME_WEBDRIVER=/usr/local/bin/chromedriver
 BEHAVE_BROWSER=chrome
@@ -262,7 +276,6 @@ pgadmin:db
 ARG_SERVICE_PARSE="
 web:django
 "
-SDOCKER_PATH=$SCRIPT_DIR
 EOF
             echo_success "Arquivo $project_env_file_sample criado."
         fi
@@ -2411,11 +2424,11 @@ function database_db_scp() {
 
   echo "$COMPOSE exec $_service_name sh -c \"
     apt-get update > /dev/null && apt-get install -y openssh-client > /dev/null
-    scp -i /tmp/dbuser.pem dbuser@$DOMAIN_NAME:/var/opt/backups/$DATABASE_REMOTE_HOST.tar.gz /dump/$DATABASE_REMOTE_HOST.tar.gz
+    scp -i $DBUSER_PEM_PATH $DOMAIN_NAME_USER@$DOMAIN_NAME:$DATABASE_REMOTE_DUMP_PATH /dump/$DATABASE_REMOTE_HOST.tar.gz
     \""
   $COMPOSE exec $_service_name sh -c "
     apt-get update > /dev/null && apt-get install -y openssh-client > /dev/null
-    scp -i /tmp/dbuser.pem dbuser@$DOMAIN_NAME:/var/opt/backups/$DATABASE_REMOTE_HOST.tar.gz /dump/$DATABASE_REMOTE_HOST.tar.gz
+    scp -i $DBUSER_PEM_PATH $DOMAIN_NAME_USER@$DOMAIN_NAME:$DATABASE_REMOTE_DUMP_PATH /dump/$DATABASE_REMOTE_HOST.tar.gz
     "
 
 }
