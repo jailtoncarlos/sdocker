@@ -860,6 +860,10 @@ function insert_text_if_not_exists() {
 
 function imprime_variaveis_env() {
   local env_file_path="$1"
+  if [ ! -f "$env_file_path" ]; then
+    echo "Arquivo '.env' ($env_file_path) não encontrado."
+    return 1
+  fi
 
   while IFS= read -r line; do
 

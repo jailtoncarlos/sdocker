@@ -530,8 +530,7 @@ function replace_role() {
 ##############################################################################
 ### MAIN
 ##############################################################################
-# SQLDUMP - passagem por referência
-get_sqldump_path "$ZIPDUMP" "$DIR_DUMP" "$SQLDUMP"
+get_sqldump_path "$ZIPDUMP" "$DIR_DUMP" SQLDUMP # SQLDUMP - passagem por referência
 
 echo "dir_dump = $DIR_DUMP"
 echo "SQLDUMP = $SQLDUMP"

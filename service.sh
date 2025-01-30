@@ -222,6 +222,7 @@ BASE_DIR=${default_base_dir}
 
 WORK_DIR=/opt/app
 
+DISABLE_DOCKERFILE_CHECK=false
 DOCKERFILE=${default_project_dockerfile}
 
 USER_NAME=$(id -un)
@@ -233,7 +234,7 @@ VPN_GATEWAY_FAIXA_IP=${default_vpn_gateway_faixa_ip}
 
 BEHAVE_CHROME_WEBDRIVER=/usr/local/bin/chromedriver
 BEHAVE_BROWSER=chrome
-BEHAVE_CHROME_HEADLESS=True
+BEHAVE_CHROME_HEADLESS=true
 SELENIUM_GRID_HUB_URL=http://selenium_grid:4444/wd/hub
 TEMPLATE_TESTDB=template_testdb
 
@@ -268,13 +269,18 @@ EOF
     # Verificar novamente se o arquivo de ambiente foi criado
     if [ ! -f "${project_env_file_sample}" ]; then
         echo_error "Arquivo \"${project_env_file_sample:-$DEFAULT_PROJECT_ENV_SAMPLE}\" não encontrado. Impossível continuar!"
+        echo_warning "O comando \"sdocker\" deve ser executado no diretório raiz do seu projeto.
+        Atualmente, você está no projeto \"${PROJECT_NAME}\"."
         echo_warning "Ter um modelo de um arquivo \"${DEFAULT_PROJECT_ENV}\" faz parte da arquitetura do \"sdocker\".
         Há duas soluções para resolver isso:
         1. Adicionar o arquivo $project_env_file_sample no diretório raiz (${project_root_dir}) do seu projeto.
         2. Informar o path do arquivo nas configurações do \"sdocker\".
-        Para isso, adicione a linha <<nome_projeto>>=<<path_arquivo_env_sample>> na seção \"[envfile_sample]\" no arquivo de
-        configuração ${local_config_inifile}.
-        Exemplo: ${project_name}=${project_root_dir}/${DEFAULT_PROJECT_ENV_SAMPLE}"
+        Para isso, adiciones as linhas:
+         - <<nome_projeto>>=<<path_arquivo_env_sample>> na seção \"[envfile]\" no arquivo de configuração ${local_config_inifile}.
+           Exemplo: ${project_name}=${project_root_dir}/${DEFAULT_PROJECT_ENV}
+         - <<nome_projeto>>=<<path_arquivo_env_sample>> na seção \"[envfile_sample]\" no arquivo de configuração ${local_config_inifile}.
+           Exemplo: ${project_name}=${project_root_dir}/${DEFAULT_PROJECT_ENV_SAMPLE}
+LEMBRE-SE: você deve executar o comando \"sdocker\" no diretório raiz do seu projeto."
         exit 1
     fi
 }
@@ -362,7 +368,6 @@ if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ]; then
 
 fi
 
-
 ##############################################################################
 ### CONVERTENDO ARRAY DO .ENV NA TAD DICT
 ##############################################################################
@@ -413,12 +418,12 @@ get_dependent_services() {
 ### DEFINIÇÕES DE VARIÁVEIS GLOBAIS
 ##############################################################################
 
-LOGINFO=${LOGINFO:-false}
-REVISADO=${REVISADO:-false}
+LOGINFO="${LOGINFO:-false}"
+REVISADO="${REVISADO:-false}"
 
 BEHAVE_CHROME_WEBDRIVER="${BEHAVE_CHROME_WEBDRIVER:-/usr/local/bin/chromedriver}"
 BEHAVE_BROWSER="${BEHAVE_BROWSER:-chrome}"
-BEHAVE_CHROME_HEADLESS="${BEHAVE_CHROME_HEADLESS:-True}"
+BEHAVE_CHROME_HEADLESS="${BEHAVE_CHROME_HEADLESS:-true}"
 SELENIUM_GRID_HUB_URL="${SELENIUM_GRID_HUB_URL:-http://selenium_grid:4444/wd/hub}"
 TEMPLATE_TESTDB="${TEMPLATE_TESTDB:-template_testdb}"
 
@@ -477,8 +482,6 @@ POSTGRES_DUMP_DIR=${DATABASE_DUMP_DIR:-dump}
 DIR_DUMP=${POSTGRES_DUMP_DIR:-dump}
 
 WORK_DIR="${WORK_DIR:-/opt/app}"
-
-DISABLE_DOCKERFILE_CHECK="${DISABLE_DOCKERFILE_CHECK:-false}"
 if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ] && [ "$DISABLE_DOCKERFILE_CHECK" = "false" ]; then
   if [ -n "$DOCKERFILE" ]; then
     if [ ! -f $DOCKERFILE ]; then
@@ -570,6 +573,8 @@ ARG_OPTIONS="${@:3}"
 #SERVICE_NAME=$(get_server_name "${ARG_SERVICE}")
 SERVICE_WEB_NAME=$(get_server_name "web")
 SERVICE_DB_NAME=$(get_server_name "db")
+VPN_GATEWAY="${VPN_GATEWAY:-172.19.0.2}"
+DISABLE_DEV_ENV_CHECK="${DISABLE_DEV_ENV_CHECK:-false}"
 
 if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ]; then
   if [ "$LOGINFO" = "true" ];  then
@@ -1769,7 +1774,7 @@ function process_command() {
     declare -a available_commands
     list_keys_in_section "$LOCAL_INIFILE_PATH" "extensions" available_commands
 
-    local has_exec=false
+    local has_exec="false"
     # Executa o loop somente se available_commands contiver algum comando
     if [ ${#available_commands[@]} -gt 0 ]; then
       for command in "${available_commands[@]}"; do
@@ -1778,7 +1783,7 @@ function process_command() {
             "$_service_name" \
             "$ARG_COMMAND" \
             $ARG_OPTIONS
-          has_exec=true
+          has_exec="true"
         fi
       done
     fi
@@ -1786,7 +1791,7 @@ function process_command() {
     # Caso o comando $ARG_COMMAND não possua função associada ou não tenha sido
     # mapeado no $LOCAL_INIFILE_PATH, exuta executa service_exec com os
     # parâmetros fornecidos
-    if [ "$has_exec" = false ]; then
+    if [ "$has_exec" = "false" ]; then
       if check_service_in_docker_compose "$PROJECT_DOCKERCOMPOSE" "$_service_name"; then
         service_exec "${_service_name}" "$ARG_COMMAND" "$ARG_OPTIONS"
       elif [ -z "$ARG_OPTIONS" ]; then
@@ -1823,7 +1828,7 @@ function docker_build() {
   # Substitui "_" por "-"
   image="${chave_ini//_/-}"
 
-  if [ "$force" = true ] || ! verifica_imagem_docker "$image" "latest" ; then
+  if [ "$force" = "true" ] || ! verifica_imagem_docker "$image" "latest" ; then
     echo ">>>
     docker build
       --build-arg WORK_DIR=$work_dir
@@ -1954,7 +1959,7 @@ function container_failed_to_initialize() {
   local error_message="$1"
   local _service_name="$2"
   local _option="${*:3}"
-  local erro_resolvido=false
+  local erro_resolvido="false"
 
   echo ">>> ${FUNCNAME[0]} $_service_name $_option"
 
@@ -2036,7 +2041,7 @@ function container_failed_to_initialize() {
             if [ "$resposta" = "S" ]; then
               echo ">>> docker stop $service"
               docker stop "$service"
-              erro_resolvido=true
+              erro_resolvido="true"
             fi
           fi
       fi
@@ -2047,7 +2052,7 @@ function container_failed_to_initialize() {
 #      for _nservice in "${_name_services[@]}"; do
 #        service_stop "$_nservice" $_option
 #      done
-      if [ "$erro_resolvido" = false ]; then
+      if [ "$erro_resolvido" = "false" ]; then
         service_stop "$_service_name" $_option
         exit 1 # falha ocorrida
       fi
@@ -2607,7 +2612,7 @@ function command_web_django_debug() {
   local _port="$1"
   shift
   local _option="$*"
-  local execucao_liberada=true
+  local execucao_liberada="true"
   echo ">>> ${FUNCNAME[0]} $_service_name $_port $_option"
 
   if [ -z "$_port" ]; then
@@ -2628,11 +2633,11 @@ function command_web_django_debug() {
     is_container_running "$_sname"
     _return_func=$?
     if [ "$_return_func" -eq 1 ]; then
-      execucao_liberada=false
+      execucao_liberada="false"
       echo_info "Caso queira inicializar o serviço \"${_sname}\", execute \"<<service docker>> $_sname up -d\"."
     fi
   done
-  if [ "$execucao_liberada" = false ]; then
+  if [ "$execucao_liberada" = "false" ]; then
     echo_warning "Este comando (${_service_name}) depende dos serviços listados acima para funcionar."
     echo_info "Você pode inicializar todos eles subindo o serviço \"${_service_name}\" (\"<<service docker>> ${_service_name} up\") e
     executando \"<<service docker>> ${_service_name} debug <<port_number>>\" em outro terminal."
@@ -2854,10 +2859,10 @@ function service_deploy() {
   local _service_name=$1
   echo ">>> ${FUNCNAME[0]} $_service_name $_option"
 
-  local force=false
+  local force="false"
   if echo "$_option" | grep -q -- "--force"; then
     read _option arg_build <<< $_option
-    force=true
+    force="true"
     if [ "$_option" = "--force" ]; then
       _option=""
     fi
