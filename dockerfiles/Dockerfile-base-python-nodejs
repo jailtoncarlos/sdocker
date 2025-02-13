@@ -29,4 +29,4 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
 
 
 # Comando para construir a imagem:
-# docker build -f /home/jailton/workstation/sdocker/dockerfiles/Dockerfile-base-python-nodejs -t python-nodejs-base:latest .
+# docker build -f /home/jailton/workspace/sdocker/dockerfiles/Dockerfile-base-python-nodejs -t python-nodejs-base:latest .

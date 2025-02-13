@@ -107,4 +107,4 @@ RUN wget https://chromedriver.storage.googleapis.com/114.0.5735.90/chromedriver_
     && rm chromedriver_linux64.zip
 
 # Docker build example
-# docker build -t python-base:latest -f /home/jailton/workstation/sdocker/dockerfiles/Dockerfile-base-python .
+# docker build -t python-base:latest -f /home/jailton/workspace/sdocker/dockerfiles/Dockerfile-base-python .

@@ -989,7 +989,7 @@ function os_path_join() {
     # Exemplo de chamada:
     # final_path=$(os_path_join "/home" "/jailton/" "workstation//" "./djud/djud")
     # echo "$final_path"
-    ## Saída esperada: /home/jailton/workstation/djud/djud
+    ## Saída esperada: /home/jailton/workspace/djud/djud
 }
 
 
