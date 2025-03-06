@@ -1923,6 +1923,12 @@ function docker_build_all() {
   local force=$1
   echo ">>> ${FUNCNAME[0]} $option"
 
+  if [ "$force" = "false" ]; then
+    echo_warning "Essa operação pode demorar um pouco. Deseja continuar?"
+    exit 99
+
+  fi
+
   build_python_base $force
   build_python_base_user $force
   build_python_nodejs_base $force
@@ -2863,6 +2869,17 @@ function service_build() {
   local _service_name=$1
   local _option="${@:2}"
   echo ">>> ${FUNCNAME[0]} $_service_name $_option"
+
+  local force="false"
+  if echo "$_option" | grep -q -- "--force"; then
+    read _option arg_build <<< $_option
+    force="true"
+    if [ "$_option" = "--force" ]; then
+      _option=""
+    fi
+  fi
+
+  docker_build_all "$force"
 
   echo ">>> $COMPOSE build --no-cache $_service_name $_option"
   error_message=$($COMPOSE build --no-cache "$_service_name" $_option 2>&1 | tee /dev/tty)
