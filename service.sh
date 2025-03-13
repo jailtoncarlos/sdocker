@@ -1923,11 +1923,9 @@ function docker_build_all() {
   local force=$1
   echo ">>> ${FUNCNAME[0]} $option"
 
-  if [ "$force" = "false" ]; then
-    echo_warning "Essa operação pode demorar um pouco. Deseja continuar?"
-    exit 99
-
-  fi
+#  if [ "$force" = "false" ]; then
+#    echo_warning "Essa operação pode demorar um pouco. Deseja continuar?"
+#  fi
 
   build_python_base $force
   build_python_base_user $force
