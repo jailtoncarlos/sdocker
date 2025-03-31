@@ -10,26 +10,39 @@ ORANGE_COLOR='\033[0;33m'  # Cor laranja para avisos
 RED_COLOR='\033[0;31m'     # Cor vermelha para erros
 BLUE_COLOR='\033[0;34m'    # Cor azul para informações
 NO_COLOR='\033[0m'         # Cor neutra para resetar as cores no terminal
+PURPLE_COLOR='\033[0;35m'  # Cor roxa para mensagens de debug
 
 # Função para exibir avisos com a cor laranja
 function echo_warning() {
-  echo "${@:3}" -e "$ORANGE_COLOR WARN: $1$NO_COLOR"
+  echo "${@:3}" -e "${ORANGE_COLOR}WARN: $1$NO_COLOR"
 }
 
 # Função para exibir erros com a cor vermelha
 function echo_error() {
-  echo "${@:3}" -e "$RED_COLOR DANG: $1$NO_COLOR"
+  echo "${@:3}" -e "${RED_COLOR}DANG: $1$NO_COLOR"
 }
 
 # Função para exibir informações com a cor azul
 function echo_info() {
-  echo "${@:3}" -e "$BLUE_COLOR INFO: $1$NO_COLOR"
+  echo "${@:3}" -e "${BLUE_COLOR}INFO: $1$NO_COLOR"
 }
 
 # Função para exibir mensagens de sucesso com a cor verde
 function echo_success() {
-  echo "${@:3}" -e "$GREEN_COLOR SUCC: $1$NO_COLOR"
+  echo "${@:3}" -e "${GREEN_COLOR}SUCC: $1$NO_COLOR"
 }
+
+# Função para exibir mensagens de sucesso com a cor verde
+function echo_debug() {
+  if [ "$DEBUG" = "true" ]; then
+    local profundidade=$(( ${#FUNCNAME[@]} - 2 )) # ajusta para não contar o próprio echo_debug
+    [ $profundidade -lt 0 ] && profundidade=0     # garante que seja pelo menos 0
+    local indent=$(printf '%-*s' 10 "$(printf '%*s' "$profundidade" | tr ' ' '+')") # fixa em 10 caracteres
+    local funname=$(printf '%-30s' "${FUNCNAME[1]}") # fixa em 30 caracteres alinhado à esquerda
+    echo -e "${PURPLE_COLOR}DEBG: $indent $funname | $1${NO_COLOR}" >&2
+  fi
+}
+
 
 ##############################################################################
 ### FUÇÕES PARA TRATAMENTO DE INSTALAÇÃOES DE COMANDOS UTILITÁRIOS
@@ -133,6 +146,14 @@ function install_command_net_tools() {
 
 function install_command_iptables() {
   install_command iptables
+}
+
+function install_command_nc() {
+  install_command netcat-openbsd
+}
+
+function install_command_ip() {
+  install_command iproute2
 }
 
 ##############################################################################
@@ -286,14 +307,19 @@ function check_db_exists() {
     local postgres_password="$4"
     local postgres_db="$5"
 
+    echo_debug "args: $postgres_user $postgres_host $postgres_port ******** postgres_db"
+
     export PGPASSWORD=$postgres_password
 
     # Use psql to check if the database exists
-    result=$(psql -U "$postgres_user" -h "$postgres_host" -p "$postgres_port" -tAc "SELECT 1 FROM pg_database WHERE datname='$postgres_db';")
+    echo_debug "psql -U $postgres_user -h $postgres_host -p $postgres_port -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname='$postgres_db';\""
+    result=$(psql -U $postgres_user -h $postgres_host -p $postgres_port -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$postgres_db';")
 
     if [ "$result" = "1" ]; then
+        echo "return: 0"
         return 0
     else
+        echo "return: 1"
         return 1
     fi
     # Exemplo de uso:
@@ -340,31 +366,42 @@ function get_host_port() {
 
     export PGPASSWORD=$postgres_password
 
-    # Tenta conexão com o host e porta fornecidos
-    if pg_isready -u postgres_user -h "$postgres_host" -p "$postgres_port" > /dev/null 2>&1; then
+    echo_debug "args: $1, $2, $3, ********"
+
+    echo_debug "Tenta conexão com o host e porta fornecidos"
+    echo_debug " pg_isready -U $postgres_user -h $postgres_host -p $postgres_port > /dev/null 2>&1"
+    if pg_isready -U "$postgres_user" -h "$postgres_host" -p "$postgres_port" > /dev/null 2>&1; then
+        echo_debug "return 0, $postgres_host $postgres_port"
         echo "$postgres_host $postgres_port"
         return 0
     fi
 
-    # Tenta conexão com localhost e a porta padrão 5432
-    if pg_isready -h "localhost" -p "5432" > /dev/null 2>&1; then
+    echo_debug "Tenta conexão com localhost e a porta padrão 5432"
+    echo_debug " pg_isready -h localhost -p 5432 > /dev/null 2>&1"
+    if pg_isready -h "localhost" -p 5432 > /dev/null 2>&1; then
+        echo_debug "return, 0, localhost 5432"
         echo "localhost 5432"
         return 0
     fi
 
-    # Tenta conexão sem especificar o host, usando a porta fornecida
+    echo_debug "Tenta conexão sem especificar o host, usando a porta fornecida"
+    echo_debug " pg_isready -p $postgres_port > /dev/null 2>&1"
     if pg_isready -p "$postgres_port" > /dev/null 2>&1; then
+        echo_debug "return, 0, localhost $postgres_port"
         echo "localhost $postgres_port"
         return 0
     fi
 
-    # Testa o host fornecido com a porta padrão 5432
-    if pg_isready -h "$postgres_host" -p "5432" > /dev/null 2>&1; then
+    echo_debug "Testa o host fornecido com a porta padrão 5432"
+    echo_debug " pg_isready -h $postgres_host -p 5432 > /dev/null 2>&1"
+    if pg_isready -h "$postgres_host" -p 5432 > /dev/null 2>&1; then
+        echo_debug "return, 0, $postgres_host 5432"
         echo "$postgres_host 5432"
         return 0
     fi
 
-    # Se todas as tentativas falharem
+    echo_debug "Se todas as tentativas falharem"
+    echo_debug "return, 1, Falha ao conectar ao PostgreSQL."
     echo "Falha ao conectar ao PostgreSQL."
     return 1
 
@@ -381,301 +418,191 @@ function get_host_port() {
 ##############################################################################
 # Função para adicionar uma rota
 function add_route() {
+    ##
+    # Adiciona uma rota estática para uma determinada rede, usando o gateway informado.
+    #
+    # Esta função cria uma rota de rede específica, encaminhando o tráfego para o gateway VPN definido.
+    # É útil para direcionar tráfego de rede específico através de uma conexão VPN ativa ou de qualquer gateway intermediário.
+    #
+    # Parâmetros:
+    #   $1 (string) - Endereço IP do gateway VPN (ex.: "192.168.0.2").
+    #   $2 (string) - Rede de destino que receberá a rota no formato CIDR (ex.: "10.10.0.0/16").
+    #
+    # Dependências:
+    #   - comando route (necessita privilégios administrativos).
+    #
+    # Retorno:
+    #   Não possui retorno direto, mas adiciona uma rota no sistema operacional caso os parâmetros sejam válidos.
+    #
+    # Exemplo de uso:
+    #   add_route "192.168.0.2" "10.10.0.0/16"
+    #
+    # Saída esperada no terminal:
+    #   Adicionando rota para 10.10.0.0/16 via 192.168.0.2
+    #   >>> route add -net 10.10.0.0/16 gw 192.168.0.2
+    ##
+
     local vpn_gateway="$1"
     local route_network="$2"
 
+    echo_debug "args: $@"
+
     if [ -n "$vpn_gateway" ] && [ -n "$route_network" ]; then
-        echo "Adicionando rota para $route_network via $vpn_gateway"
+        echo "--- Adicionando rota para $route_network via $vpn_gateway"
         echo ">>> route add -net $route_network gw $vpn_gateway"
         route add -net $route_network gw "$vpn_gateway"
+    else
+        echo_error "Parâmetros inválidos ou insuficientes fornecidos para add_route()."
     fi
 }
 
 function update_hosts_file() {
-# Função para atualizar o arquivo /etc/hosts
-# Adicionar domínio no /etc/hosts
-# O arquivo /etc/hosts é usado para mapear nomes de domínio a endereços IP localmente no sistema.
-# Adiciona uma nova entrada, permitindo que o sistema resolva $domain_name para o endereço IP especificado em $ip.
-# Isso é útil em configurações de rede onde se deseja resolver um nome de domínio personalizado,
-# como em ambientes de desenvolvimento ou em situações onde o DNS público não é utilizado.
+    ##
+    # Atualiza o arquivo /etc/hosts adicionando uma nova entrada de mapeamento entre IP e domínio.
+    #
+    # O arquivo /etc/hosts permite resolver nomes de domínio personalizados diretamente para endereços IP,
+    # sem consultar servidores DNS externos. Essa função facilita o registro automático de novos domínios no sistema,
+    # especialmente útil em ambientes locais, desenvolvimento ou quando DNS público não estiver disponível.
+    #
+    # Parâmetros:
+    #   $1 (string) - Nome do domínio a ser adicionado (ex.: "meuapp.local").
+    #   $2 (string) - Endereço IP para o domínio (ex.: "192.168.1.100").
+    #
+    # Dependências:
+    #   - Permissão de escrita no arquivo /etc/hosts (necessita privilégios administrativos).
+    #
+    # Retorno:
+    #   Não possui retorno direto, mas adiciona uma nova entrada no arquivo /etc/hosts se parâmetros forem válidos.
+    #
+    # Exemplo de uso:
+    #   update_hosts_file "meuapp.local" "192.168.1.100"
+    #
+    # Saída esperada no terminal:
+    #   Adicionando meuapp.local ao /etc/hosts
+    #   >>> echo "192.168.1.100 meuapp.local" >> /etc/hosts
+    ##
 
     local domain_name="$1"
     local ip="$2"
 
+    echo_debug "args: $@"
+
     if [ -n "$domain_name" ] && [ -n "$ip" ]; then
-        echo "Adicionando $domain_name ao /etc/hosts"
+        echo "--- Adicionando \"$ip $domain_name\" ao /etc/hosts"
         echo ">>> echo \"$ip $domain_name\" >> /etc/hosts"
         echo "$ip $domain_name" >> /etc/hosts
+    else
+        echo_error "Parâmetros inválidos ou insuficientes fornecidos para update_hosts_file()."
     fi
 }
 
 function process_hosts_and_routes() {
-# Função para atualizar o /etc/hosts e verificar a tabela de rotas
-    local etc_hosts="$1"  # Entrada multilinear com os domínios e IPs
+    ##
+    # Processa atualizações do arquivo /etc/hosts e configura rotas de rede.
+    #
+    # Esta função realiza duas operações principais:
+    #   1. Adiciona uma rota de rede usando um gateway VPN especificado.
+    #   2. Atualiza o arquivo /etc/hosts com múltiplas entradas fornecidas no formato "dominio:ip".
+    #
+    # Isso é especialmente útil em ambientes que necessitam de configuração dinâmica e automatizada
+    # de rotas e resolução de domínios locais, como redes VPN, ambientes de desenvolvimento e testes.
+    #
+    # Parâmetros:
+    #   $1 (string) - Conteúdo multilinear contendo pares domínio:IP (ex.: "app.local:192.168.0.2\napi.local:192.168.0.3").
+    #   $2 (string) - IP do gateway VPN usado para adicionar a rota (ex.: "172.30.0.1").
+    #   $3 (string) - Rede destino para a nova rota no formato CIDR (ex.: "10.10.0.0/16").
+    #
+    # Dependências:
+    #   - install_command_net_tools (função auxiliar que garante instalação de ferramentas necessárias, como o comando route)
+    #   - add_route (função que adiciona rota estática)
+    #   - convert_multiline_to_array (função que converte entrada multilinear em array Bash)
+    #   - update_hosts_file (função que adiciona entradas ao /etc/hosts)
+    #
+    # Retorno:
+    #   Não possui retorno direto, mas modifica diretamente a configuração do sistema (rotas e /etc/hosts).
+    #
+    # Exemplo de uso:
+    #   entries="app.local:192.168.0.2\napi.local:192.168.0.3"
+    #   process_hosts_and_routes "$entries" "172.30.0.1" "10.10.0.0/16"
+    #
+    # Efeitos esperados após execução:
+    #   - Rotas atualizadas (verificáveis com "route -n").
+    #   - Arquivo /etc/hosts atualizado com os domínios fornecidos.
+    ##
+
+    local etc_hosts="$1"   # Entradas multilineares com domínio:ip
     local vpn_gateway="$2"
-    local route_nework="$3"
+    local route_network="$3"
+
+    echo_debug "args: $@"
+
     local dict_etc_hosts=()
 
     install_command_net_tools
 
-    add_route "$vpn_gateway" "$route_nework"
+    add_route "$vpn_gateway" "$route_network"
 
-    # Converte o conteúdo do /etc/hosts em um array
+    # Converte o conteúdo fornecido em array Bash
     convert_multiline_to_array "$etc_hosts" dict_etc_hosts
 
-    # Itera sobre cada entrada para atualizar o /etc/hosts
+    # Atualiza o arquivo /etc/hosts com as entradas fornecidas
     for entry in "${dict_etc_hosts[@]}"; do
         local domain_name="${entry%%:*}"  # Extrai o domínio
-        local ip="${entry##*:}"  # Extrai o IP
+        local ip="${entry##*:}"          # Extrai o IP
         update_hosts_file "$domain_name" "$ip"
     done
 
-    # Verifica a tabela de rotas
+    # Exibe a tabela de rotas atualizadas
     route -n
-    sleep 2  # Aguarda 2 segundos
+    sleep 2  # Aguarda 2 segundos para verificação visual
 }
 
 function check_port() {
+    ##
+    # Verifica se uma porta específica está em uso no sistema operacional.
+    #
+    # Esta função consulta o comando "netstat" para determinar se uma porta TCP/UDP específica está atualmente aberta e em uso.
+    # Útil em scripts que necessitam validar disponibilidade de portas antes de iniciar serviços, containers ou servidores.
+    #
+    # Parâmetros:
+    #   $1 (integer) - Número da porta que será verificada (ex.: "8080").
+    #
+    # Dependências:
+    #   - netstat (necessita instalação prévia, geralmente do pacote "net-tools").
+    #
+    # Retorno:
+    #   0 - Se a porta estiver disponível (não está em uso).
+    #   1 - Se a porta já estiver em uso.
+    #
+    # Exemplo de uso:
+    #   check_port "8080"
+    #   if [ $? -eq 0 ]; then
+    #       echo "Porta disponível."
+    #   else
+    #       echo "Porta em uso."
+    #   fi
+    #
+    ##
+
     local _port="$1"
 
+    echo_debug "args: $@"
+
     if netstat -tuln | grep -q ":$_port"; then
+        echo_debug "return: 1"
         return 1  # Porta em uso
     else
+        echo_debug "return: 0"
         return 0  # Porta disponível
     fi
-# # Exemplo de uso da função
-  #_port="8080"
-  #
-  #check_port "$_port"
-  #
-  #if check_port "$_port"; then
-  #    echo "A porta $_port está disponível."
-  #else
-  #    echo "A porta $_port está em uso."
-  #fi
 }
-
-##############################################################################
-### FUNÇÕES PARA ENCONTRAR UM IP DISPONÍVEL NO CONTAINER.
-##############################################################################
-# **verificar_ip_em_uso**: Verifica se um determinado intervalo de IP já está em uso,
-# verificando as redes do Docker com o driver bridge.
-# **encontrar_ip_disponivel**: Tenta encontrar um intervalo de IP não utilizado,
-# começando em um determinado intervalo base (172.19.0.0/16, neste exemplo).
-# Se o intervalo inicial (172.18.0.0/16) estiver em uso, a função tenta encontrar
-# outro intervalo de IP (172.19.0.0/16, 172.20.0.0/16, etc.).
-# O resultado é impresso e pode ser usado no arquivo Docker Compose.
-
-# Função para verificar se um IP específico está em uso
-function verificar_gateway_em_uso() {
-    local gateway_ip="$1"
-    docker network inspect --format '{{json .IPAM.Config .Labels.}}' $(docker network ls -q) | grep -q "\"Gateway\":\"$gateway_ip\"" && return 0
-    return 1  # Retorna 1 se o IP do gateway não estiver em uso
-}
-
-function verificar_ip_em_uso() {
-# Função para verificar se uma sub-rede está em uso
-    local subnet="$1"
-    docker network ls --filter driver=bridge -q | while read -r network_id; do
-        docker network inspect "$network_id" --format '{{(index .IPAM.Config 0).Subnet}}' | grep -q "^$subnet$" && return 0
-    done
-    return 1  # Retorna 1 se a sub-rede não estiver em uso
-}
-
-# Função para encontrar uma sub-rede e IP de gateway disponíveis
-# Rede clase C, prefixo /16
-function encontrar_ip_disponivel() {
-    local base_ip="$1"  # Ex: "172.19"
-    local mask="$2"     # Ex: "16"
-    local terceiro_octeto=0
-    # Testar uma série de sub-redes começando no base_ip
-    while [ "$terceiro_octeto" -lt 255 ]; do
-        # Construir a sub-rede e o IP do gateway
-        subnet="${base_ip}.${terceiro_octeto}.0/${mask}"
-        gateway_ip="${base_ip}.${terceiro_octeto}.2"
-
-        # Verificar se a sub-rede ou o gateway já estão em uso
-        if ! verificar_ip_em_uso "$subnet" && ! verificar_gateway_em_uso "$gateway_ip"; then
-            echo "$subnet $gateway_ip"
-            return 0  # Retornar a sub-rede e o IP do gateway disponíveis
-        fi
-
-        # Incrementar o segundo octeto para tentar o próximo intervalo de IP
-        terceiro_octeto=$((terceiro_octeto + 1))
-    done
-
-    echo "Erro: Nenhuma sub-rede ou IP de gateway disponível encontrado."
-    return 1
-}
-
-function determinar_gateway_vpn() {
-# Função para determinar a sub-rede e o IP do gateway
-    local default_vpn_gateway_faixa_ip="172.19.0.0/16"
-    local default_vpn_gateway_ip="172.19.0.2"
-    local base_ip="172.19"
-    local mask="16"
-
-    # Verificar se o gateway inicial está em uso
-    if verificar_gateway_em_uso "$default_vpn_gateway_ip"; then
-#        echo_warning "IP do gateway $default_vpn_gateway_ip já está em uso."
-
-        # Encontrar um novo IP de gateway disponível
-        local resultado=$(encontrar_ip_disponivel "$base_ip" "$mask")
-
-        if [ $? -eq 0 ]; then
-            default_vpn_gateway_faixa_ip=$(echo "$resultado" | cut -d ' ' -f 1)
-            default_vpn_gateway_ip=$(echo "$resultado" | cut -d ' ' -f 2)
-#            echo_warning "Nova sub-rede e IP de gateway disponíveis: $default_vpn_gateway_faixa_ip, Gateway: $default_vpn_gateway_ip"
-        else
-            echo_error "Não foi possível encontrar uma sub-rede ou IP de gateway disponível."
-            exit 1
-        fi
-#    else
-#        echo_info "Sub-rede $default_vpn_gateway_faixa_ip e gateway $default_vpn_gateway_ip estão disponíveis."
-    fi
-
-    # Retornar os valores
-    echo "$default_vpn_gateway_faixa_ip $default_vpn_gateway_ip"
-
-# # Exemplo de uso da função
-  #resultado=$(determinar_gateway_vpn)
-  #vpn_gateway_faixa_ip=$(echo "$resultado" | cut -d ' ' -f 1)
-  #vpn_gateway_ip=$(echo "$resultado" | cut -d ' ' -f 2)
-  #
-  #echo "VPN Gateway Faixa IP: $vpn_gateway_faixa_ip"
-  #echo "VPN Gateway IP: $vpn_gateway_ip"
-}
-
-function verificar_subrede_na_faixa() {
-    local subrede="$1" # Sub-rede que queremos verificar, ex: 192.168.1.0/24
-    local faixa="$2"   # Faixa a ser comparada, ex: 192.168.0.0/16
-
-    # Verifica se a sub-rede está dentro da faixa maior usando ipcalc
-    ipcalc -n "$subrede" "$faixa" 2>/dev/null | grep -q "overlap" && {
-        echo "A sub-rede $subrede está dentro da faixa $faixa."
-        return 0
-    }
-    echo "A sub-rede $subrede NÃO está dentro da faixa $faixa."
-    return 1
-}
-
-function verificar_sobreposicao_subrede() {
-    local subnet="$1" # Sub-rede que queremos verificar, ex: 172.19.0.0/16
-    local rede_encontrada=""
-    local conflito=1 # Inicializa como sem conflito
-
-#    echo "Verificando sobreposição para a sub-rede: $subnet"
-    # Itera sobre todas as redes Docker
-    while read -r network_id; do
-        # Obtém o nome e a sub-rede da rede atual, se disponíveis
-        local nome_rede
-        local rede_subnet
-
-        nome_rede=$(docker network inspect --format '{{.Name}}' "$network_id")
-        rede_subnet=$(docker network inspect --format '{{if (index .IPAM.Config 0)}}{{(index .IPAM.Config 0).Subnet}}{{end}}' "$network_id")
-
-        # Ignora redes sem sub-rede definida
-        if [ -z "$rede_subnet" ]; then
-            continue
-        fi
-
-#        echo "Verificando rede: $nome_rede (sub-rede: $rede_subnet)"
-
-        # Verifica sobreposição de sub-redes (usar lógica ou ferramentas como ipcalc/sipcalc)
-        # TODO: Ideal usar verificar_subrede_na_faixa, porém como depende do
-        #  pacote ipcalc, preferimos não usar para não ter que instalar
-        #  pacotes adicionais
-        if [ "$subnet" = "$rede_subnet" ]; then
-            rede_encontrada="$nome_rede"
-            conflito=0
-            break
-        fi
-    done < <(docker network ls -q) # Redireciona a saída diretamente ao `while`
-
-    # Retorna o nome da rede encontrada, se houver
-    if [ $conflito -eq 0 ]; then
-        echo "$rede_encontrada"
-    fi
-
-    return $conflito
-
-    # Exemplo de uso:
-    # rede_conflitante=$(verificar_sobreposicao_subrede "172.19.0.0/16")
-    # if [[ $? -eq 0 ]]; then
-    #    echo "Rede em conflito: $rede_conflitante"
-    # else
-    #    echo "Nenhuma rede em conflito."
-    # fi
-}
-
-function encontrar_subrede_disponivel() {
-    local cidr_base="$1"    # Base da sub-rede, ex: "192.168.0.0"
-    local cidr_range="$2"   # Tamanho do CIDR, ex: 24
-    local max_subnets="$3"  # Número máximo de sub-redes para testar, ex: 100
-    local subnet_disponivel=""
-    local ip_sugerido=""
-
-#    echo "Buscando sub-rede disponível na faixa $cidr_base/$cidr_range..."
-
-    # Obter todas as sub-redes ocupadas atualmente no Docker
-    local subredes_ocupadas=($(docker network ls -q | xargs docker network inspect --format '{{if (index .IPAM.Config 0)}}{{(index .IPAM.Config 0).Subnet}}{{end}}' 2>/dev/null | grep -v '^$'))
-
-    # Itera gerando sub-redes a partir da base e verificando disponibilidade
-    for i in $(seq 0 $((max_subnets - 1))); do
-        # Calcula a próxima sub-rede adicionando `i` ao terceiro octeto
-        local subnet=$(echo "$cidr_base" | awk -v inc="$i" -F '.' '{printf "%d.%d.%d.%d/%s", $1, $2, ($3 + inc), 0, "'"$cidr_range"'"}')
-
-        # Verifica se a sub-rede está ocupada
-        local conflito=0
-        for rede in "${subredes_ocupadas[@]}"; do
-            if [[ "$rede" == "$subnet" ]]; then
-                conflito=1
-                break
-            fi
-        done
-
-        # Se não houver conflito, a sub-rede está disponível
-        if [[ $conflito -eq 0 ]]; then
-            subnet_disponivel="$subnet"
-            # Calcula o IP sugerido: primeiro endereço disponível na sub-rede (ex.: 192.168.1.1 para 192.168.1.0/24)
-            ip_sugerido=$(echo "$subnet" | awk -F '/' '{split($1, octets, "."); printf "%d.%d.%d.%d", octets[1], octets[2], octets[3], octets[4] + 1}')
-#            echo "Sub-rede disponível: $subnet_disponivel"
-#            echo "IP sugerido para uso: $ip_sugerido"
-            break
-        fi
-    done
-
-    # Retornar a sub-rede e o IP sugerido
-    if [[ -z "$subnet_disponivel" ]]; then
-#        echo "Nenhuma sub-rede disponível encontrada na faixa fornecida."
-        return 1
-    else
-        echo "$subnet_disponivel $ip_sugerido"
-        return 0
-    fi
-
-   # Exemplo de uso:
-   # Procurar uma sub-rede na faixa 192.168.0.0/24, testando até 100 sub-redes
-   #resultado=$(encontrar_subrede_disponivel "192.168.0.0" 24 100)
-   #
-   #if [[ $? -eq 0 ]]; then
-   #    # Extrair sub-rede e IP sugerido da saída
-   #    subrede=$(echo "$resultado" | awk '{print $1}')
-   #    ip_sugerido=$(echo "$resultado" | awk '{print $2}')
-   #    echo "Sub-rede encontrada: $subrede"
-   #    echo "IP sugerido para uso: $ip_sugerido"
-   #else
-   #    echo "Nenhuma sub-rede disponível encontrada."
-   #fi
-}
-
 
 ##############################################################################
 ### FUNÇÕES PARA TRATAR TRATAMENTO DE IMAGENS DOCKER, DOCKERFILE E DOCKER-COMPOSE
 ##############################################################################
 
 # Função para verificar se a imagem Docker existe
-verifica_imagem_docker() {
+function verifica_imagem_docker() {
     local imagem="$1"
     local tag="${2:-latest}"  # Se nenhuma tag for fornecida, usa "latest"
 

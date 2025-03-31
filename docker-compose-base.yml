@@ -44,7 +44,7 @@ services:
     <<: *app-common
     command: >
       bash -c "
-        pip install -r ${WORK_DIR}/$REQUIREMENTS_FILE
+        pip install -r ${WORK_DIR:-/opt/app}/$REQUIREMENTS_FILE
         python manage.py migrate
         python manage.py runserver 0.0.0.0:${APP_PORT:-8000}
       "
@@ -89,15 +89,19 @@ services:
     ports:
       - ${POSTGRES_EXTERNAL_PORT:-5432}:${DATABASE_PORT:-5432}
     environment:
+      POSTGRES_HOST: ${DATABASE_HOST:-localhost}
+      POSTGRES_PORT: ${DATABASE_PORT:-5432}
       POSTGRES_USER: ${DATABASE_USER:-postgres}
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
       POSTGRES_DB: ${DATABASE_NAME:-${COMPOSE_PROJECT_NAME}}
+      POSTGRES_MAX_LOCKS_PER_TRANSACTION: 128
       PGDATA: /data/postgres
     entrypoint: ["/scripts/db_entrypoint.sh"]
     volumes:
-      - /home/user/workspace/sdocker/scripts:/scripts/
-      - /home/user/workspace/sdocker/scripts/init_database.sh:/docker-entrypoint-initdb.d/init_database.sh
-      - ${DATABASE_DUMP_DIR:-dump}:/dump
+      - ${SDOCKER_WORKDIR}/scripts:/scripts/
+      - ${SDOCKER_WORKDIR}/init_database.sh:/docker-entrypoint-initdb.d/init_database.sh
+      - ${DBUSER_PEM_PATH:-../../../scripts/config/dbuser.pem}:/tmp/dbuser.pem
+      - ${DATABASE_DUMP_DIR:-.././dump}:/dump
       - db_data:/var/lib/postgresql/data
     cap_add:
       - NET_ADMIN  # Adiciona a capacidade de manipulação de rede
@@ -151,8 +155,8 @@ networks:
     enable_ipv6: false
     ipam:
       config:
-        - subnet: $VPN_GATEWAY_FAIXA_IP
-          gateway: $VPN_GATEWAY
+        - subnet: $DOCKER_IPAM_CONFIG_SUBNET
+          gateway: $DOCKER_VPN_IP
 
 volumes:
   db_data:

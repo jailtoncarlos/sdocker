@@ -3,7 +3,7 @@
 git config --global core.autocrlf false
 PROJECT_ROOT_DIR=$(pwd -P)
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SDOCKER_WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 function check_and_load_scripts() {
   filename_script="$1"
@@ -11,8 +11,8 @@ function check_and_load_scripts() {
   RED_COLOR='\033[0;31m'     # Cor vermelha para erros
   NO_COLOR='\033[0m'         # Cor neutra para resetar as cores no terminal
 
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  scriptsh="$script_dir/${filename_script}"
+  sdocker_workdir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  scriptsh="$sdocker_workdir/${filename_script}"
   scriptsh=$(echo "$scriptsh" | sed 's/\/\//\//g') # Remove barras duplas
 
   if [ ! -f "$scriptsh" ]; then
@@ -25,6 +25,7 @@ function check_and_load_scripts() {
 
 # Carrega o arquivo externo com as funções
 check_and_load_scripts "/scripts/utils.sh"
+check_and_load_scripts "/scripts/docker_error_handlers.sh"
 #check_and_load_scripts "/scripts/create_template_testdb.sh"
 check_and_load_scripts "/scripts/read_ini.sh"
 check_and_load_scripts "install.sh"
@@ -43,11 +44,11 @@ if [ ! -d "$DEFAULT_BASE_DIR" ]; then
   DEFAULT_BASE_DIR="$PROJECT_ROOT_DIR"
 fi
 
-INIFILE_PATH="${SCRIPT_DIR}/config.ini"
-LOCAL_INIFILE_PATH="${SCRIPT_DIR}/config-local.ini"
+INIFILE_PATH="${SDOCKER_WORKDIR}/config.ini"
+LOCAL_INIFILE_PATH="${SDOCKER_WORKDIR}/config-local.ini"
 if [ ! -f "$LOCAL_INIFILE_PATH" ]; then
-  echo ">>> cp ${SCRIPT_DIR}/config-local-sample.ini $LOCAL_INIFILE_PATH"
-  cp "${SCRIPT_DIR}/config-local-sample.ini" "$LOCAL_INIFILE_PATH"
+  echo ">>> cp ${SDOCKER_WORKDIR}/config-local-sample.ini $LOCAL_INIFILE_PATH"
+  cp "${SDOCKER_WORKDIR}/config-local-sample.ini" "$LOCAL_INIFILE_PATH"
 fi
 
 PROJECT_DJANGO=$(read_ini "$INIFILE_PATH" "environment_dev_names" "django" | tr -d '\r')
@@ -57,7 +58,7 @@ DISABLE_DEV_ENV_CHECK="false"
 COMMAND_GENERATE_PROJECT="generate-project"
 # remove o primeiro argumento que o comando "generate-project"
 arg_command=$1
-if [ "$PROJECT_ROOT_DIR" = "$SCRIPT_DIR" ] && [ "$arg_command" == "$COMMAND_GENERATE_PROJECT" ]; then
+if [ "$PROJECT_ROOT_DIR" = "$SDOCKER_WORKDIR" ] && [ "$arg_command" == "$COMMAND_GENERATE_PROJECT" ]; then
   shift # remove o primeiro argumento
   options=$* # pega todos os argumentos restantes
 
@@ -65,7 +66,7 @@ if [ "$PROJECT_ROOT_DIR" = "$SCRIPT_DIR" ] && [ "$arg_command" == "$COMMAND_GENE
   # tudo como um único argumento e não uma lista de argumentos.
   extension_exec_script "$INIFILE_PATH" "$arg_command" $options
 
-elif [ "$PROJECT_ROOT_DIR" = "$SCRIPT_DIR" ]; then
+elif [ "$PROJECT_ROOT_DIR" = "$SDOCKER_WORKDIR" ]; then
   echo_success "Configurações iniciais do script definidas com sucesso."
   echo_info "Execute o comando \"sdocker\" no diretório raiz do seu projeto.
   ou use o comando \"${COMMAND_GENERATE_PROJECT}\" para gerar um projeto base."
@@ -187,15 +188,19 @@ function verifica_e_configura_env() {
         resposta=$(echo "$resposta" | tr '[:lower:]' '[:upper:]')  # Converter para maiúsculas
 
         if [ "$resposta" = "S" ]; then
-          resultado=$(determinar_gateway_vpn)
-          default_vpn_gateway_faixa_ip=$(echo "$resultado" | cut -d ' ' -f 1)
-          default_vpn_gateway_ip=$(echo "$resultado" | cut -d ' ' -f 2)
+          resultado=$(determinar_docker_ipam_config)
+          default_docker_ipam_config_subment=$(echo "$resultado" | cut -d ' ' -f 1)
+          default_docker_ipam_config_gateway_ip=$(echo "$resultado" | cut -d ' ' -f 2)
+
+          # Gera default_docker_vpn_ip substituindo o último octeto por .2
+          default_docker_vpn_ip="$(echo "$default_docker_ipam_config_gateway_ip" | sed 's/\.[0-9]\+$/\.2/')"
+
 
 # Criar  arquivo env sample e inserir as variáveis na ordem inversa
 cat <<EOF > "$project_env_file_sample"
 COMPOSE_PROJECT_NAME=${project_name}
 
-SDOCKER_PATH=$SCRIPT_DIR
+SDOCKER_WORKDIR=$SDOCKER_WORKDIR
 REVISADO=false
 LOGINFO=false
 DISABLE_DEV_ENV_CHECK=false
@@ -232,14 +237,21 @@ USER_NAME=$(id -un)
 USER_UID=$(id -u)
 USER_GID=$(id -g)
 
+# Variáveis para definir a rede interna dos containers.
+DOCKER_IPAM_CONFIG_GATEWAY_IP=${default_docker_ipam_config_gateway_ip}
+DOCKER_IPAM_CONFIG_SUBNET=${default_docker_ipam_config_subment}
+
 # Variáveis utilizadas para adicionar uma rota no container "DB" para o container VPN
-VPN_GATEWAY=${default_vpn_gateway_ip}
-VPN_GATEWAY_FAIXA_IP=${default_vpn_gateway_faixa_ip}
+DOCKER_VPN_IP=${default_docker_vpn_ip}
 ROUTE_NETWORK=
 
 # Variáveis necessárias para poder realizar a cópia do dump do banco do host remoto para local host.
+# A cópia é realizada pelo comando scp
+DBUSER_PEM_PATH=/your_path/dbuser.pem
+DOMAIN_NAME_USER=dbuser
 DOMAIN_NAME=dns.domain.local
 DATABASE_REMOTE_HOST=database_name_remote_host
+DATABASE_REMOTE_DUMP_PATH_DIR=/var/opt/backups/database_name_remote_host.tar.gz
 
 # Variáveis usadas para adiciona uma nova entrada no arquivo /etc/hosts no container DB,
 # permitindo que o sistema resolva nomes de dominío para o endereço IP especificado.
@@ -300,7 +312,7 @@ LEMBRE-SE: você deve executar o comando \"sdocker\" no diretório raiz do seu p
     fi
 }
 
-if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ]; then
+if [ "$PROJECT_ROOT_DIR" != "$SDOCKER_WORKDIR" ]; then
   verifica_e_configura_env "$PROJECT_ENV_FILE_SAMPLE" \
       "$DEFAULT_PROJECT_DOCKERFILE" \
       "$PROJECT_NAME" \
@@ -365,7 +377,7 @@ configura_env() {
 }
 
 
-if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ]; then
+if [ "$PROJECT_ROOT_DIR" != "$SDOCKER_WORKDIR" ]; then
   configura_env "$PROJECT_ENV_FILE_SAMPLE" "$PROJECT_ENV_PATH_FILE"
   _return_func=$?
   if [ "$_return_func" -ne 0 ]; then
@@ -497,7 +509,7 @@ POSTGRES_DUMP_DIR=${DATABASE_DUMP_DIR:-dump}
 DIR_DUMP=${POSTGRES_DUMP_DIR:-dump}
 
 WORK_DIR="${WORK_DIR:-/opt/app}"
-if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ] && [ "$DISABLE_DOCKERFILE_CHECK" = "false" ]; then
+if [ "$PROJECT_ROOT_DIR" != "$SDOCKER_WORKDIR" ] && [ "$DISABLE_DOCKERFILE_CHECK" = "false" ]; then
   if [ -n "$DOCKERFILE" ]; then
     if [ ! -f $DOCKERFILE ]; then
       echo_warning "Variável \"DOCKERFILE\" identificada no arquivo \"$PROJECT_ENV_PATH_FILE\".
@@ -559,9 +571,11 @@ USER_NAME=${USER_NAME:-$(id -un)}
 USER_UID=${USER_UID:-$(id -u)}
 USER_GID=${USER_GID:-$(id -g)}
 
-VPN_GATEWAY_FAIXA_IP="${VPN_GATEWAY_FAIXA_IP:-172.19.0.0/16}"
-VPN_GATEWAY="${VPN_GATEWAY:-172.19.0.2}"
+DOCKER_VPN_IP="${DOCKER_VPN_IP:-172.30.0.2}"
+DOCKER_IPAM_CONFIG_SUBNET="${DOCKER_IPAM_CONFIG_SUBNET:-172.30.0.0/24}"
+DOCKER_IPAM_CONFIG_GATEWAY_IP="${DOCKER_IPAM_CONFIG_GATEWAY_IP:-172.30.0.1}"
 ROUTE_NETWORK="${ROUTE_NETWORK:-<<enderero_ip/faixa>> -- Exemplo: 10.10.0.0/16}"
+
 DOMAIN_NAME="${DOMAIN_NAME:-<<url_dns_banco_externo>> -- Exemplo: route.domain.local}"
 DATABASE_REMOTE_HOST="${DATABASE_REMOTE_HOST:-<<nome_do_banco_externo>> -- Exemplo: banco_remoto}"
 
@@ -588,10 +602,11 @@ ARG_OPTIONS="${@:3}"
 #SERVICE_NAME=$(get_server_name "${ARG_SERVICE}")
 SERVICE_WEB_NAME=$(get_server_name "web")
 SERVICE_DB_NAME=$(get_server_name "db")
-VPN_GATEWAY="${VPN_GATEWAY:-172.19.0.2}"
+
+DOCKER_IPAM_CONFIG_GATEWAY_IP="${DOCKER_IPAM_CONFIG_GATEWAY_IP:-172.30.0.1}"
 DISABLE_DEV_ENV_CHECK="${DISABLE_DEV_ENV_CHECK:-false}"
 
-if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ]; then
+if [ "$PROJECT_ROOT_DIR" != "$SDOCKER_WORKDIR" ]; then
   if [ "$LOGINFO" = "true" ];  then
     echo_info "PROJECT_ROOT_DIR: $PROJECT_ROOT_DIR"
 
@@ -686,10 +701,10 @@ function copy_docker_compose_base() {
 
   path_volume_script=$(grep -oP '(?<=- ).*(?=:/scripts/)' "$project_dockercompose_base_path")
 
-  path_script_dir=$SCRIPT_DIR/scripts/
-  if [ -f "$project_dockercompose_base_path" ] && [ "$path_volume_script" != "$path_script_dir" ]; then
+  path_sdocker_workdir=$SDOCKER_WORKDIR/scripts/
+  if [ -f "$project_dockercompose_base_path" ] && [ "$path_volume_script" != "$path_sdocker_workdir" ]; then
     dockerfile_postgresql=$(read_ini "$config_inifile" "dockerfile" "postgresql" | tr -d '\r')
-    dockerfile_postgresql_path=$SCRIPT_DIR/dockerfiles/${dockerfile_postgresql}
+    dockerfile_postgresql_path=$SDOCKER_WORKDIR/dockerfiles/${dockerfile_postgresql}
     # Ajustando o path do build dockerfile do container "postgresql" (db)
     # Substituir linhas contendo "Dockerfile-db" pelo novo texto
     novo_texto="      dockerfile: ${dockerfile_postgresql_path}"
@@ -697,12 +712,12 @@ function copy_docker_compose_base() {
 
     # Ajustando o volume do container "postgresql" (db)
     # Comando sed para substituir a linha inteira que contém ":/scripts/" pelo novo texto
-    novo_texto="      - ${path_script_dir}:/scripts/"
+    novo_texto="      - ${path_sdocker_workdir}:/scripts/"
     sed -i "/:\/scripts\//c\\$novo_texto" "$project_dockercompose_base_path"
 
     # Ajustando o volume do container "postgresql" (db)
     # Comando sed para substituir a linha inteira que contém "docker-entrypoint-initdb.d" pelo novo texto
-    novo_texto="      - ${path_script_dir}init_database.sh:/docker-entrypoint-initdb.d/init_database.sh"
+    novo_texto="      - ${path_sdocker_workdir}init_database.sh:/docker-entrypoint-initdb.d/init_database.sh"
     sed -i "/docker-entrypoint-initdb.d/c\\$novo_texto" "$project_dockercompose_base_path"
   fi
   return 0
@@ -758,7 +773,7 @@ function verifica_e_configura_dockerfile_project() {
     local docker_file_or_compose_path="$2"
     local docker_file_or_compose_sample_path="$3"
     local config_inifile="$4"
-    local script_dir="$5"
+    local sdocker_workdir="$5"
 
     if [ ! -f "$docker_file_or_compose_path" ] && [ -f "$docker_file_or_compose_sample_path" ]; then
       echo_warning "Detectamos que existe o arquivo $docker_file_or_compose_sample_path,
@@ -776,8 +791,8 @@ function verifica_e_configura_dockerfile_project() {
           dockercompose_base=$(read_ini "$config_inifile" "dockercompose" "python_base" | tr -d '\r')
           project_dockercompose_base_sample_path="$(dirname $docker_file_or_compose_path)/${dockercompose_base}.sample"
 
-          echo ">>> cp ${script_dir}/${dockercompose_base} $(dirname $docker_file_or_compose_path)/${dockercompose_base}"
-          cp "${script_dir}/${dockercompose_base}" "$project_dockercompose_base_sample_path"
+          echo ">>> cp ${sdocker_workdir}/${dockercompose_base} $(dirname $docker_file_or_compose_path)/${dockercompose_base}"
+          cp "${sdocker_workdir}/${dockercompose_base}" "$project_dockercompose_base_sample_path"
         fi
         echo ">>> cp $docker_file_or_compose_sample_path $docker_file_or_compose_path"
         cp "$docker_file_or_compose_sample_path" "$docker_file_or_compose_path"
@@ -837,13 +852,13 @@ function verifica_e_configura_dockerfile_project() {
             base_image=$(read_ini "$config_inifile" "image_base_to_dev" "$base_image" | tr -d '\r')
           fi
 
-          script_dir=$(dirname "$config_inifile")
+          sdocker_workdir=$(dirname "$config_inifile")
           if [ "$tipo" = "dockerfile" ]; then
             filename=$(read_ini "$config_inifile" "dockerfile" "$base_image" | tr -d '\r')
-            dockerfile_base_dev_sample="${script_dir}/dockerfiles/${filename}"
+            dockerfile_base_dev_sample="${sdocker_workdir}/dockerfiles/${filename}"
           else
             filename=$(read_ini "$config_inifile" "dockercompose" "$base_image" | tr -d '\r')
-            dockerfile_base_dev_sample="${script_dir}/${filename}"
+            dockerfile_base_dev_sample="${sdocker_workdir}/${filename}"
           fi
 
           echo "dockerfile_base_dev_sample: $dockerfile_base_dev_sample"
@@ -1033,7 +1048,7 @@ function verifica_e_configura_dockerfile_project() {
     "$docker_file_or_compose_path" \
     "$docker_file_or_compose_sample_path" \
     "$config_inifile" \
-    "$script_dir"
+    "$sdocker_workdir"
 
   gerar_arquivo_modelo "$tipo" \
     "$docker_file_or_compose_path" \
@@ -1046,7 +1061,7 @@ function verifica_e_configura_dockerfile_project() {
     "$docker_file_or_compose_path" \
     "$docker_file_or_compose_sample_path" \
     "$config_inifile" \
-    "$script_dir"
+    "$sdocker_workdir"
 
   verificar_e_atualizar_dev_image "$dev_image" \
     "$env_file_path" \
@@ -1061,7 +1076,7 @@ function verifica_e_configura_dockerfile_project() {
    "$tipo_nome"
 }
 
-if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ] && [ "$DISABLE_DOCKERFILE_CHECK" = "false" ]; then
+if [ "$PROJECT_ROOT_DIR" != "$SDOCKER_WORKDIR" ] && [ "$DISABLE_DOCKERFILE_CHECK" = "false" ]; then
   verifica_e_configura_dockerfile_project "dockerfile" \
       "$PROJECT_ENV_PATH_FILE" \
       "$PROJECT_DOCKERFILE" \
@@ -1090,11 +1105,12 @@ fi
 ###############################################################################
 # Só insere caso a variável não exista.
 
-if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ] && [ "$TIPO_PROJECT" = "$PROJECT_DJANGO" ]; then
+if [ "$PROJECT_ROOT_DIR" != "$SDOCKER_WORKDIR" ] && [ "$TIPO_PROJECT" = "$PROJECT_DJANGO" ]; then
   insert_text_if_not_exists "DATABASE_DUMP_DIR=${DATABASE_DUMP_DIR}" "$PROJECT_ENV_PATH_FILE"
   insert_text_if_not_exists "DATABASE_NAME=${DATABASE_NAME}" "$PROJECT_ENV_PATH_FILE"
-  insert_text_if_not_exists "VPN_GATEWAY_FAIXA_IP=${VPN_GATEWAY_FAIXA_IP}" "$PROJECT_ENV_PATH_FILE"
-  insert_text_if_not_exists "VPN_GATEWAY=${VPN_GATEWAY}" "$PROJECT_ENV_PATH_FILE"
+  insert_text_if_not_exists "DOCKER_IPAM_CONFIG_SUBNET=${DOCKER_IPAM_CONFIG_SUBNET}" "$PROJECT_ENV_PATH_FILE"
+  insert_text_if_not_exists "DOCKER_IPAM_CONFIG_GATEWAY_IP=${DOCKER_IPAM_CONFIG_GATEWAY_IP}" "$PROJECT_ENV_PATH_FILE"
+  insert_text_if_not_exists "DOCKER_VPN_IP=${DOCKER_VPN_IP}" "$PROJECT_ENV_PATH_FILE"
   insert_text_if_not_exists "USER_GID=${USER_GID}" "$PROJECT_ENV_PATH_FILE"
   insert_text_if_not_exists "USER_UID=${USER_UID}" "$PROJECT_ENV_PATH_FILE"
   insert_text_if_not_exists "USER_NAME=${USER_NAME}" "$PROJECT_ENV_PATH_FILE"
@@ -1123,7 +1139,7 @@ fi
 #echo "SERVICE_DB_NAME = $SERVICE_DB_NAME"
 #echo "PROJECT_NAME = $PROJECT_NAME"
 #echo "BASE_DIR = $BASE_DIR"
-if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ] && [ "$REVISADO" = "false" ]; then
+if [ "$PROJECT_ROOT_DIR" != "$SDOCKER_WORKDIR" ] && [ "$REVISADO" = "false" ]; then
   imprime_variaveis_env $PROJECT_ENV_PATH_FILE
   echo_warning "Acima segue TODO os valores das variáveis definidas no arquivo \"${PROJECT_ENV_PATH_FILE}\"."
   read -p "Pressione [ENTER] exibir as principáis variáveis."
@@ -1165,8 +1181,8 @@ if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ] && [ "$REVISADO" = "false" ]; then
        - USER_GID=${USER_GID}
 
     * Configuração da rede interna
-      - VPN_GATEWAY_FAIXA_IP=${VPN_GATEWAY_FAIXA_IP}
-      - VPN_GATEWAY=${VPN_GATEWAY}
+      - DOCKER_IPAM_CONFIG_SUBNET=${DOCKER_IPAM_CONFIG_SUBNET}
+      - DOCKER_IPAM_CONFIG_GATEWAY_IP=${DOCKER_IPAM_CONFIG_GATEWAY_IP}
 
     * Demais varíaveis:
        - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}
@@ -1176,7 +1192,7 @@ if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ] && [ "$REVISADO" = "false" ]; then
     * Variáveis par definição de acesso via VPN. [OPCIONAIS]
         - VPN_WORK_DIR=${VPN_WORK_DIR}  -- diretório onde estão os arquivos do container VPN
         Variáveis utilizadas para adicionar uma rota no container ${SERVICE_DB_NAME} para o container VPN
-          - VPN_GATEWAY=${VPN_GATEWAY}
+          - DOCKER_VPN_IP=${DOCKER_VPN_IP}
           - ROUTE_NETWORK=${ROUTE_NETWORK}
         - DOMAIN_NAME=${DOMAIN_NAME}
         - DATABASE_REMOTE_HOST=${DATABASE_REMOTE_HOST}
@@ -1347,7 +1363,7 @@ function get_compose_command() {
   return 0
 }
 
-if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ]; then
+if [ "$PROJECT_ROOT_DIR" != "$SDOCKER_WORKDIR" ]; then
   COMPOSE=$(get_compose_command "$PROJECT_ENV_PATH_FILE" \
       "$PROJECT_ROOT_DIR" \
       "${DICT_SERVICES_COMMANDS[*]}" \
@@ -1363,7 +1379,7 @@ fi
 
 ########################## Validações das variávies para projetos DJANGO ##########################
 sair=0
-if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ] && [ "$TIPO_PROJECT" = "$PROJECT_DJANGO" ]; then
+if [ "$PROJECT_ROOT_DIR" != "$SDOCKER_WORKDIR" ] && [ "$TIPO_PROJECT" = "$PROJECT_DJANGO" ]; then
 
   # Verificar se a variável COMPOSE_PROJECT_NAME está definida
   if [ -z "${COMPOSE_PROJECT_NAME}" ]; then
@@ -1441,8 +1457,8 @@ if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ] && [ "$TIPO_PROJECT" = "$PROJECT_DJA
     exit $sair
   fi
 
-  if [ ! -f "$SCRIPT_DIR/scripts/init_database.sh" ]; then
-    echo_warning "Arquivo $SCRIPT_DIR/scripts/init_database.sh não existe. Sem ele, torna-se impossível realizar dump ou restore do banco.!"
+  if [ ! -f "$SDOCKER_WORKDIR/scripts/init_database.sh" ]; then
+    echo_warning "Arquivo $SDOCKER_WORKDIR/scripts/init_database.sh não existe. Sem ele, torna-se impossível realizar dump ou restore do banco.!"
     read -p "Pressione [ENTER] para continuar."
   fi
 
@@ -1459,8 +1475,8 @@ if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ] && [ "$TIPO_PROJECT" = "$PROJECT_DJA
     read -r -p "Pressione 'S' para confirmar ou [ENTER] para ignorar: " resposta
     resposta=$(echo "$resposta" | tr '[:lower:]' '[:upper:]')  # Converter para maiúsculas
     if [ "$resposta" = "S" ]; then
-      echo ">>> cp ${SCRIPT_DIR}/${PRE_COMMIT_CONFIG_FILE} $file_precommit_config"
-      cp "${SCRIPT_DIR}/${PRE_COMMIT_CONFIG_FILE}" "$file_precommit_config"
+      echo ">>> cp ${SDOCKER_WORKDIR}/${PRE_COMMIT_CONFIG_FILE} $file_precommit_config"
+      cp "${SDOCKER_WORKDIR}/${PRE_COMMIT_CONFIG_FILE}" "$file_precommit_config"
       sleep 0.5
 
       if [ ! -d "${PROJECT_ROOT_DIR}/pre-commit-bin" ]; then
@@ -1469,8 +1485,8 @@ if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ] && [ "$TIPO_PROJECT" = "$PROJECT_DJA
       fi
       sleep 0.5
 
-      echo ">>> cp -r ${SCRIPT_DIR}/pre-commit-bin ${PROJECT_ROOT_DIR}/pre-commit-bin"
-      cp -r "${SCRIPT_DIR}/pre-commit-bin" "${PROJECT_ROOT_DIR}"
+      echo ">>> cp -r ${SDOCKER_WORKDIR}/pre-commit-bin ${PROJECT_ROOT_DIR}/pre-commit-bin"
+      cp -r "${SDOCKER_WORKDIR}/pre-commit-bin" "${PROJECT_ROOT_DIR}"
       sleep 0.5
     fi
   fi
@@ -1486,7 +1502,7 @@ if [ "$LOGINFO" = "true" ]; then
   guração $PROJECT_ENV_PATH_FILE"
 fi
 repo_url=$(read_ini "$INIFILE_PATH" "repository" "clone" | tr -d '\r')
-verificar_e_atualizacao_repositorio "$SCRIPT_DIR" "$repo_url" "$CHECK_FOR_UPDATES_DAYS"
+verificar_e_atualizacao_repositorio "$SDOCKER_WORKDIR" "$repo_url" "$CHECK_FOR_UPDATES_DAYS"
 
 ##############################################################################
 ### Funções utilitárias para instanciar os serviços
@@ -1877,7 +1893,7 @@ function build_python_base() {
   local force="$1"
   echo ">>> ${FUNCNAME[0]} $force"
 
-  docker_build "$SCRIPT_DIR" \
+  docker_build "$SDOCKER_WORKDIR" \
     "$INIFILE_PATH" \
     "python_base" \
     "${PYTHON_BASE_IMAGE:-python:3.12-slim-bullseye}" \
@@ -1892,7 +1908,7 @@ function build_python_base() {
 function build_python_base_user() {
   local force="$1"
   echo ">>> ${FUNCNAME[0]} $force"
-  docker_build "$SCRIPT_DIR" \
+  docker_build "$SDOCKER_WORKDIR" \
   "$INIFILE_PATH" \
   "python_base_user" \
   "${PYTHON_BASE_USER_IMAGE:-python-base:latest}" \
@@ -1907,7 +1923,7 @@ function build_python_base_user() {
 function build_python_nodejs_base() {
   local force="$1"
   echo ">>> ${FUNCNAME[0]} $force"
-  docker_build "$SCRIPT_DIR" \
+  docker_build "$SDOCKER_WORKDIR" \
     "$INIFILE_PATH" \
     "python_nodejs_base" \
     "${PYTHON_NODEJS_BASE_IMAGE:-python-base-user:latest}" \
@@ -1932,6 +1948,145 @@ function docker_build_all() {
   build_python_nodejs_base $force
 }
 
+function obter_nome_container() {
+    ##
+    # obter_nome_container
+    #
+    # Recupera o nome do container Docker associado a um serviço definido em um arquivo docker-compose.
+    #
+    # Esta função executa `docker compose ps -q` para obter o ID do container associado ao serviço,
+    # e em seguida utiliza `docker inspect` para extrair o nome real do container.
+    #
+    # Parâmetros:
+    #   $1 - Nome do serviço definido no docker-compose (ex: "vpn")
+    #
+    # Retorno:
+    #   stdout - Nome do container (ex: "vpn_openconnect")
+    #   código 0 - Sucesso (container em execução encontrado)
+    #   código 1 - Falha (container não está em execução ou não foi encontrado)
+    #
+    # Exemplo de uso:
+    #   compose_file="/caminho/docker-compose.yml"
+    #   nome_container=$(obter_nome_container "$compose_file" "vpn") || exit 1
+    #   echo "Container: $nome_container"
+    #
+    # Dependências:
+    #   - docker
+    #   - docker compose
+    ##
+    local service_name="$1"
+
+    local container_id
+    echo_debug ">>> $COMPOSE ps -q \"$service_name\""
+    container_id=$($COMPOSE ps -q "$service_name")
+
+    if [ -n "$container_id" ]; then
+        echo_debug ">>> docker inspect --format '{{.Name}}' \"$container_id\" | cut -c2-"
+        docker inspect --format '{{.Name}}' "$container_id" | cut -c2-
+        return 0
+    else
+        echo_warning "O serviço \"$service_name\" não está em execução ou não foi encontrado no Compose."
+        return 1
+    fi
+}
+
+function check_service_in_docker_compose() {
+    local dockercompose_file=$1
+    local service=$2
+
+    echo_debug ">>> grep -q \"service:\" \"$dockercompose_file\""
+    if grep -q "service:" "$dockercompose_file"; then
+        echo_debug "O serviço '${service}' existe no docker-compose."
+        return 0
+    else
+        echo_debug "O serviço '${service}' NÃO existe no docker-compose."
+        return 1
+    fi
+    # Exemplo de uso:
+    # check_service_in_docker_compose "nome_do_servico"
+}
+
+function is_container_running() {
+  ##
+  # is_container_running
+  #
+  # Verifica se um container Docker associado a um serviço está em execução (status "Up").
+  #
+  # A função usa o comando `$COMPOSE ps` para verificar o status do serviço fornecido e
+  # retorna um código de saída com base na verificação.
+  #
+  # Parâmetros:
+  #   $1 - Nome do serviço (ex: "vpn")
+  #
+  # Variáveis esperadas:
+  #   COMPOSE - Comando base para execução do docker compose, por exemplo: "docker compose -f ./docker-compose.yml"
+  #
+  # Retorno:
+  #   0 - Se o container do serviço estiver rodando (Up)
+  #   1 - Se o container do serviço não estiver rodando
+  #
+  # Exemplo de uso:
+  #   if ! is_container_running "vpn"; then
+  #       echo "O serviço VPN não está em execução."
+  #   fi
+  ##
+  local _service_name="$1"
+
+  # Verifica se o container está rodando
+  echo_debug ">>>  $COMPOSE ps | grep -q \"${_service_name}.*Up\""
+  if ! $COMPOSE ps | grep -q "${_service_name}.*Up"; then
+    echo_warning "O container \"$_service_name\" não está inicializado."
+
+    echo_debug "return: 1"
+    return 1
+  fi
+
+  echo_debug "Container está em execução."
+  echo_debug "return: 0"
+  return 0
+}
+
+function container_failed_to_initialize() {
+    ##
+    # Função para tratamento de falhas na inicialização de containers Docker.
+    #
+    # Essa função chama handle_container_init_failure, que analisa erros específicos de inicialização
+    # e tenta corrigi-los. Se houver uma falha crítica que não possa ser resolvida automaticamente,
+    # o script é encerrado imediatamente com o código de retorno recebido.
+    #
+    # Parâmetros:
+    #   $1 - Mensagem de erro (stderr)
+    #   $2 - Nome do serviço Docker afetado (ex: "vpn")
+    #   $3+ - Argumentos adicionais para a função auxiliar de tratamento
+    #
+    # Retorno:
+    #   Encerra o script com o código de retorno da função handle_container_init_failure caso esta falhe.
+    #
+    # Exemplo de uso:
+    #   if ! docker compose up -d vpn 2> err.log; then
+    #       container_failed_to_initialize "$(cat err.log)" "vpn"
+    #   fi
+    #
+
+    local exit_code=$?
+    local error_message="$1"
+    local _service_name="$2"
+    local _option="${*:3}"
+
+    echo ">>> ${FUNCNAME[0]} $_service_name $_option"
+
+    # Chama a função que trata os erros de inicialização
+    handle_container_init_failure "$error_message" "$_service_name" $_option
+    local _handle_exit_code=$?
+
+    # Encerra imediatamente caso handle_container_init_failure indique falha
+    if [ $_handle_exit_code -ne 0 ]; then
+        echo_error "Falha ao inicializar o container \"$_service_name\".
+        erro: $error_message"
+        exit $_handle_exit_code
+    fi
+}
+
 #function check_option_d() {
 #  local _option="$1"
 #
@@ -1941,142 +2096,6 @@ function docker_build_all() {
 #    return 1  # Falso (False)
 #  fi
 #}
-
-
-function check_service_in_docker_compose() {
-    local dockercompose_file=$1
-    local service=$2
-
-    if grep -q "service:" "$dockercompose_file"; then
-        # "O serviço '${service}' existe no docker-compose."
-        return 0
-    else
-        # "O serviço '${service}' NÃO existe no docker-compose."
-        return 1
-    fi
-    # Exemplo de uso:
-    # check_service_in_docker_compose "nome_do_servico"
-}
-function is_container_running() {
-  local _service_name="$1"
-#  echo ">>> ${FUNCNAME[0]} $_service_name"
-
-  # Verifica se o container está rodando
-  if ! $COMPOSE ps | grep -q "${_service_name}.*Up"; then
-    echo_warning "O container \"$_service_name\" não está inicializado."
-    return 1
-  fi
-  return 0
-  # usar:
-  # if ! is_container_running "$_service_name"; then
-  # ...
-  # fi
-}
-
-function container_failed_to_initialize() {
-  local exit_code=$?
-  local error_message="$1"
-  local _service_name="$2"
-  local _option="${*:3}"
-  local erro_resolvido="false"
-
-  echo ">>> ${FUNCNAME[0]} $_service_name $_option"
-
-  # TODO: tratar erro Failed to create network suap_suap: Error response from daemon: invalid pool request: Pool overlaps with other one on this address space
-
-  if [ $exit_code -ne 0 ] || echo "$error_message" | grep -iq "error"; then
-      # Exibe a mensagem de erro e interrompe a execução do script
-      echo_error "Falha ao inicializar o container.
-      $error_message"
-#      if echo "$error_message" | grep -iq "Address already in use"; then
-#      fi
-      if echo "$error_message" | grep -iq "invalid pool request"; then
-        echo solucao1=""
-        rede_conflitante=$(verificar_sobreposicao_subrede "$VPN_GATEWAY_FAIXA_IP")
-        local _return_func=$?
-        if [ $_return_func -eq 0 ]; then
-          # Procurar uma sub-rede na faixa 192.168.0.0/24, testando até 100 sub-redes
-          resultado=$(encontrar_subrede_disponivel "192.168.0.0" 24 100)
-          if [[ $? -eq 0 ]]; then
-              subrede=$(echo "$resultado" | awk '{print $1}')
-              ip_sugerido=$(echo "$resultado" | awk '{print $2}')
-              solucao1="Alterar o valor da variável \"VPN_GATEWAY_FAIXA_IP\" para a sub-rede
-              \"$subrede\" e \"VPN_GATEWAY\" para o IP \"$ip_sugerido\"."
-          else
-              solucao1="Alterar o valor da variável \"VPN_GATEWAY_FAIXA_IP\" para uma sub-rede
-              que não entre em conflito."
-          fi
-
-          echo_warning "A sub-rede '$VPN_GATEWAY_FAIXA_IP' definida na variável \"VPN_GATEWAY_FAIXA_IP\"
-          entra em conflito com a rede '$rede_conflitante'."
-          echo_info "Quando uma sub-rede entra em conflito com uma rede existente, o Docker
-          impede a criação de uma nova rede devido à sobreposição de endereços.
-          Para resolver o problema, segue as possíves soluções:
-          1. $solucao1
-          2. Remover ou Redefinir a Sub-rede de \"$rede_conflitante\"."
-
-          echo "Deseja remover a rede \"$rede_conflitante\"?"
-          read -r -p "Pressione 'S' para confirmar ou [ENTER] para ignorar: " resposta
-          resposta=$(echo "$resposta" | tr '[:lower:]' '[:upper:]')  # Converter para maiúsculas
-
-          if [ "$resposta" = "S" ]; then
-            echo ">>> docker network rm $rede_conflitante"
-            docker network rm "$rede_conflitante"
-            echo "-- Rede \"$rede_conflitante\" removida."
-          else
-            echo_error "A rede \"$rede_conflitante\" não foi removida."
-            echo_info "$solucao1"
-            exit 1
-          fi
-
-        else
-          echo "Nenhuma rede em conflito."
-        fi
-      elif echo "$error_message" | grep -iq "port is already allocated"; then
-          # Verifica qual container está usando a porta 5432
-          # docker inspect -f '{{.Name}} - {{.NetworkSettings.Ports}}' $(docker ps -q) | grep -q 5432
-
-          local port
-          # Utilizando expressão regular para capturar a porta
-          port=$(echo "$error_message" | grep -oP '0\.0\.0\.0:\K[0-9]+')
-
-          # Obter o serviço que está usando a porta especificada
-          local service
-          service=$(docker ps --filter "publish=${port}" --format "{{.Names}}")
-
-          echo_warning "
-          O erro que ocorreu indica que a porta $port já está em uso no sistema, e o Docker não conseguiu
-          vincular outra instância do serviço a essa mesma porta.
-          Para resolver o problema, existem algumas opções:
-          1. Definir uma nova porta para o serviço \"$_service_name\" no arquivo \"${DEFAULT_PROJECT_ENV}\".
-          2. Verificar qual processo/serviço está utilizando a porta e parar o processo em execução.
-          "
-          if [ ! -z "$service" ]; then
-            echo_info "Foi detectado que o serviço \"$service\" está utilizando a porta \"$port\".
-            Deseja encerrar a execução desse serviço?"
-
-            read -r -p "Pressione 'S' para confirmar ou [ENTER] para ignorar: " resposta
-            resposta=$(echo "$resposta" | tr '[:lower:]' '[:upper:]')  # Converter para maiúsculas
-            if [ "$resposta" = "S" ]; then
-              echo ">>> docker stop $service"
-              docker stop "$service"
-              erro_resolvido="true"
-            fi
-          fi
-      fi
-#      echo_warning "Parando todos os serviços dependentes de \"$_service_name\" que estão em execução ..."
-#      declare -a _name_services
-#      dict_get_and_convert "$_service_name" "${DICT_SERVICES_DEPENDENCIES[*]}" _name_services
-#
-#      for _nservice in "${_name_services[@]}"; do
-#        service_stop "$_nservice" $_option
-#      done
-      if [ "$erro_resolvido" = "false" ]; then
-        service_stop "$_service_name" $_option
-        exit 1 # falha ocorrida
-      fi
-  fi
-}
 
 function service_run() {
   local _service_name="$1"
@@ -2112,8 +2131,11 @@ function _service_exec() {
   local _option="$@"
   echo ">>> ${FUNCNAME[0]} $_service_name $_option"
 
-#  if [ "$(docker container ls | grep "${COMPOSE_PROJECT_NAME}-${_service_name}-1")" ]; then
-  if docker container ls | grep -q "${COMPOSE_PROJECT_NAME}-${_service_name}-1"; then
+
+  nome_container=$(obter_nome_container "$_service_name")
+
+  echo_debug ">>> docker container ls | grep -q \"$nome_container\""
+  if docker container ls | grep -q "$nome_container"; then
     if [ "$ARG_SERVICE" = "pgadmin" ]; then
       _option=$(echo $_option | sed 's/bash/\/bin\/sh/')
     fi
@@ -2146,7 +2168,7 @@ function service_shell() {
     echo_warning "Container $_service_name não está em execução!"
   fi
 
-  if docker container ls | grep -q "${COMPOSE_PROJECT_NAME}-${_service_name}-1"; then
+  if is_container_running "$_service_name"; then
     service_exec "$_service_name" bash $_option
   else
     service_run "$_service_name" bash $_option
@@ -2198,37 +2220,48 @@ function compose_service_db_get_host_port() {
   local return_func
 
   # Executa o comando dentro do contêiner
-  psql_output=$($COMPOSE exec -T "$SERVICE_DB_NAME" bash -c "
-  export POSTGRES_USER='$POSTGRES_USER' &&
-  export POSTGRES_HOST='$POSTGRES_HOST' &&
-  export POSTGRES_PORT='$POSTGRES_PORT' &&
-  export POSTGRES_PASSWORD='$POSTGRES_PASSWORD' &&
-  source /scripts/utils.sh && get_host_port '\$POSTGRES_USER' '\$POSTGRES_HOST' '\$POSTGRES_PORT' '\%POSTGRES_PASSWORD' ")
+
+  echo_debug "$COMPOSE exec -T $SERVICE_DB_NAME bash -c \"
+  source /scripts/utils.sh && get_host_port $POSTGRES_USER $POSTGRES_HOST $POSTGRES_PORT ******** \")
+  "
+
+  psql_output=$($COMPOSE exec -T $SERVICE_DB_NAME bash -c "
+  export DEBUG=$DEBUG &&
+  source /scripts/utils.sh && get_host_port $POSTGRES_USER $POSTGRES_HOST $POSTGRES_PORT $POSTGRES_PASSWORD ")
 
   return_func=$?
+  echo_debug "return $return_func, $psql_output"
+
   echo "$psql_output"
   return $return_func
 }
 
 function compose_db_check_exists() {
-  local host
-  local port
-  local return_func
+  local host port return_func
 
   # Chamar a função para obter o host e a porta correta
   psql_output=$(compose_service_db_get_host_port)
   _return_func=$?
+
   if [ $_return_func -eq 0 ]; then
     read host port <<< $psql_output
   else
     echo_error "Não foi possível conectar ao banco de dados."
+    echo "return: 1"
     exit 1
   fi
 
   # Executa o comando dentro do contêiner
+  echo_debug "$COMPOSE exec -T $SERVICE_DB_NAME bash -c \"
+  source /scripts/utils.sh && check_db_exists $POSTGRES_USER $host $port ******** $POSTGRES_DB\"
+  "
+
   $COMPOSE exec -T "$SERVICE_DB_NAME" bash -c "
+  export DEBUG=$DEBUG &&
   source /scripts/utils.sh && check_db_exists $POSTGRES_USER $host $port $POSTGRES_PASSWORD $POSTGRES_DB"
   return_func=$?
+
+  echo "return: $return_func"
   return $return_func
 }
 
@@ -2426,7 +2459,7 @@ function database_db_scp() {
   # > /dev/null: redireciona apenas a saída padrão (stdout) para /dev/null, descartando todas as
   # saídas normais, mas permitindo que os erros (stderr) ainda sejam exibidos.
 
-  echo "$COMPOSE exec $_service_name sh -c \"
+  echo ">>> $COMPOSE exec $_service_name sh -c \"
     apt-get update > /dev/null && apt-get install -y openssh-client > /dev/null
     scp -i $DBUSER_PEM_PATH $DOMAIN_NAME_USER@$DOMAIN_NAME:$DATABASE_REMOTE_DUMP_PATH /dump/$DATABASE_REMOTE_HOST.tar.gz
     \""
@@ -2434,7 +2467,6 @@ function database_db_scp() {
     apt-get update > /dev/null && apt-get install -y openssh-client > /dev/null
     scp -i $DBUSER_PEM_PATH $DOMAIN_NAME_USER@$DOMAIN_NAME:$DATABASE_REMOTE_DUMP_PATH /dump/$DATABASE_REMOTE_HOST.tar.gz
     "
-
 }
 
 function database_db_dump() {
@@ -3011,7 +3043,7 @@ function main() {
 
 }
 
-if [ "$PROJECT_ROOT_DIR" != "$SCRIPT_DIR" ]; then
+if [ "$PROJECT_ROOT_DIR" != "$SDOCKER_WORKDIR" ]; then
   if [ "$LOGINFO" = "true" ]; then
     echo_warning "VARIÁVEL \"LOGINFO=$LOGINFO\". Defina  \"LOGINFO=false\"  para  NÃO  mais
     exibir as mensagens informativas acima!"
