@@ -204,29 +204,30 @@ cat <<EOF > "$project_env_file_sample"
 usam docker-compose no mesmo host.
 COMPOSE_PROJECT_NAME=${project_name}
 
-############# DEFINIÇÕES PARA FAZER CÓPIA DO DUMP DO BANCO VIA SCP #############
+################### DEFINIÇÕES PARA CONSTRUÇÃO DE CONTAINER  ###################
 # Espera o nome da imagem Docker personalizada para desenvolvimento. Essa
-variável normalmente é preenchida dinamicamente durante o processo de build ou
-atribuída manualmente no '.env'. Define a imagem que será usada pelos serviços
+# variável normalmente é preenchida dinamicamente durante o processo de build ou
+# atribuída manualmente no '.env'. Define a imagem que será usada pelos serviços
 # de aplicação no ambiente Docker.
 DEV_IMAGE=
-
 # Define a imagem base do Python usada para construir a imagem de
 # desenvolvimento (DEV_IMAGE). Fornece o interpretador Python e dependências
 # mínimas necessárias para rodar a aplicação. A versão slim-bullseye é otimizada
 # para tamanho e performance.
 PYTHON_BASE_IMAGE=python:3.12-slim-bullseye
+# Definir qual imagem do PostgreSQL será usada
 POSTGRES_IMAGE=postgres:16.3
-
-APP_PORT=8000
-POSTGRES_EXTERNAL_PORT=5432
-REDIS_EXTERNAL_PORT=6379
-PGADMIN_EXTERNAL_PORT=8001
-
-WORK_DIR=/opt/app
-
+# Especifica o caminho para o arquivo Dockerfile que será usado para construir a
+# imagem da aplicação personalizada (DEV_IMAGE).
 DOCKERFILE=${default_project_dockerfile}
-############# DEFINIÇÕES PARA FAZER CÓPIA DO DUMP DO BANCO VIA SCP #############
+# Serve para mapear quais arquivos docker-compose estão associados a cada
+# serviço gerenciado pelo projeto. Permite que múltiplos arquivos docker-compose
+# sejam utilizados de forma modular e organizada, suportando arquiteturas mais
+# complexas e ambientes desacoplados.
+COMPOSES_FILES="
+all:docker-compose.yml
+"
+
 ############## DEFINIÇÕES DE SINALIZADORES DE CONTROLE DO SDOCKER ##############
 # Váriaveis utilizadas como sinalizadores de controle de comportamento do
 # ambiente de desenvolvimento e execução
@@ -247,6 +248,12 @@ DISABLE_DEV_ENV_CHECK=false
 DISABLE_DOCKERFILE_CHECK=false
 
 ############# DEFINIÇÕES DE CONFIGURAÇÕES PARA A APLICAÇÃO DJANGO ##############
+# Define o diretório de trabalho dentro do container onde a aplicação será
+# montada.
+WORK_DIR=/opt/app
+# Define a porta exposta no host onde a aplicação Django (ou outra) estará
+# acessível.
+APP_PORT=8000
 # Representar o diretório base raiz do projeto
 BASE_DIR=${default_base_dir}
 # Define o nome do arquivo de dependências Python que deve ser instalado via pip
@@ -259,8 +266,7 @@ SETTINGS_LOCAL_FILE=${settings_local_file}
 # serve para indicar o nome da branch principal do repositório Git (como main
 # ou master) e é utilizada em comandos que comparam alterações entre essa branch
 # de referência e a branch atual, especialmente durante execuções do pre-commit.
-GIT_BRANCH_MAIN=master
-
+GIT_BRANCH_MAIN=main
 # DEFINIÇÕES DE CONFIGURAÇÕES DE ACESSO AO BANCO
 DATABASE_NAME=${project_name}
 DATABASE_USER=postgres
@@ -268,12 +274,25 @@ DATABASE_PASSWORD=postgres
 DATABASE_HOST=db
 DATABASE_PORT=5432
 DATABASE_DUMP_DIR=${project_root_dir}/dump
+# Porta do banco de dados PostgreSQL exposta no host. Permite que ferramentas locais
+# (como PgAdmin ou DBeaver) acessem o banco rodando no container.
+POSTGRES_EXTERNAL_PORT=5432
+
+######################## DEFINIÇÕES DE OUTROS CONTAINERS #######################
+# Porta configurada para acessar o Redis. Pode ser usada pela aplicação
+# para caching, filas, sessões, etc.
+REDIS_PORT=6379
+REDIS_EXTERNAL_PORT=6379
+# Porta configurada para acessar o PgAdmin (interface gráfica para o PostgreSQL) via
+# navegador.
+PGADMIN_PORT=8001
+PGADMIN_EXTERNAL_PORT=8001
 
 ########## DEFINIÇÕES PARA USUÁRIOS PERSONALIZADO DENTRO DO CONTAINER ##########
 # Criar um usuário personalizado dentro do container Docker referente ao
 # container da aplicação (ex. Django). Isso garante que os arquivos criados ou
-modificados dentro do container tenham os mesmos IDs de usuário e grupo do
-sistema host, evitando, portanto, problemas de permissões e propriedade de
+# modificados dentro do container tenham os mesmos IDs de usuário e grupo do
+# sistema host, evitando, portanto, problemas de permissões e propriedade de
 # arquivos.
 USER_NAME=$(id -un)
 USER_UID=$(id -u)
@@ -315,7 +334,7 @@ dns2.ifrn.local:10.10.1.244
 # via o IP da VPN interna ($DOCKER_VPN_IP)
 ROUTE_NETWORK=10.10.0.0/16
 
-# DEFINIÇÕES PARA CONFIGURAÇÕES DE TESTES AUTOMATIZADOS COM BEHAVE E SELENIUM ##
+### DEFINIÇÕES PARA CONFIGURAÇÕES DE TESTES AUTOMATIZADOS COM BEHAVE E SELENIUM#
 BEHAVE_CHROME_WEBDRIVER=/usr/local/bin/chromedriver
 BEHAVE_BROWSER=chrome
 BEHAVE_CHROME_HEADLESS=true
@@ -324,11 +343,6 @@ TEMPLATE_TESTDB=template_testdb
 
 ############# DEFINIÇÕES PARA CONFIGURAÇÕES DO UTILITÁRIO SDOCKER ##############
 SDOCKER_WORKDIR=$SDOCKER_WORKDIR
-
-COMPOSES_FILES="
-all:docker-compose.yml
-"
-
 SERVICES_COMMANDS="
 all:deploy;undeploy;redeploy;status;restart;logs;up;down
 web:makemigrations;manage;migrate;shell_plus;debug;build;git;pre-commit;test_behave
@@ -338,12 +352,10 @@ pgadmin:
 redis:
 selenium_grid:
 "
-
 SERVICES_DEPENDENCIES="
 django:node;redis;db
 pgadmin:db
 "
-
 ARG_SERVICE_PARSE="
 web:django
 "
