@@ -156,7 +156,7 @@ networks:
     ipam:
       config:
         - subnet: $DOCKER_IPAM_CONFIG_SUBNET
-          gateway: $DOCKER_VPN_IP
+          gateway: $DOCKER_IPAM_CONFIG_GATEWAY_IP
 
 volumes:
   db_data:

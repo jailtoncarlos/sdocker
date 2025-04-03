@@ -198,15 +198,23 @@ function verifica_e_configura_env() {
 
 # Criar  arquivo env sample e inserir as variáveis na ordem inversa
 cat <<EOF > "$project_env_file_sample"
+
+#  Define o nome base para os containers, volumes, redes e outros recursos
+# criados pelo docker-compose. Evita conflitos entre diferentes projetos que
+usam docker-compose no mesmo host.
 COMPOSE_PROJECT_NAME=${project_name}
 
-SDOCKER_WORKDIR=$SDOCKER_WORKDIR
-REVISADO=false
-LOGINFO=false
-DISABLE_DEV_ENV_CHECK=false
-DISABLE_DOCKERFILE_CHECK=false
-
+############# DEFINIÇÕES PARA FAZER CÓPIA DO DUMP DO BANCO VIA SCP #############
+# Espera o nome da imagem Docker personalizada para desenvolvimento. Essa
+variável normalmente é preenchida dinamicamente durante o processo de build ou
+atribuída manualmente no '.env'. Define a imagem que será usada pelos serviços
+# de aplicação no ambiente Docker.
 DEV_IMAGE=
+
+# Define a imagem base do Python usada para construir a imagem de
+# desenvolvimento (DEV_IMAGE). Fornece o interpretador Python e dependências
+# mínimas necessárias para rodar a aplicação. A versão slim-bullseye é otimizada
+# para tamanho e performance.
 PYTHON_BASE_IMAGE=python:3.12-slim-bullseye
 POSTGRES_IMAGE=postgres:16.3
 
@@ -215,6 +223,45 @@ POSTGRES_EXTERNAL_PORT=5432
 REDIS_EXTERNAL_PORT=6379
 PGADMIN_EXTERNAL_PORT=8001
 
+WORK_DIR=/opt/app
+
+DOCKERFILE=${default_project_dockerfile}
+############# DEFINIÇÕES PARA FAZER CÓPIA DO DUMP DO BANCO VIA SCP #############
+############## DEFINIÇÕES DE SINALIZADORES DE CONTROLE DO SDOCKER ##############
+# Váriaveis utilizadas como sinalizadores de controle de comportamento do
+# ambiente de desenvolvimento e execução
+# Indica que o projeto foi revisado manualmente pelo desenvolvedor. Permite
+# pular verificações automáticas de consistência ou estrutura dos diretórios e
+arquivos.
+REVISADO=false
+# Controla se informações adicionais de log devem ser exibidas. Ativa mensagens
+#de log mais detalhadas durante a execução dos serviços.
+LOGINFO=false
+# Desabilita a verificação de variáveis e arquivos esperados no ambiente de
+# desenvolvimento. Permite rodar comandos mesmo que arquivos como '.env',
+# '.env.local', 'settings_local.py', etc., não estejam presentes ou completos.
+DISABLE_DEV_ENV_CHECK=false
+# Desativa a validação da existência do Dockerfile ou da configuração correta
+# para a build da imagem.  Permite que o script continue mesmo que o Dockerfile
+# esteja ausente ou personalizado.
+DISABLE_DOCKERFILE_CHECK=false
+
+############# DEFINIÇÕES DE CONFIGURAÇÕES PARA A APLICAÇÃO DJANGO ##############
+# Representar o diretório base raiz do projeto
+BASE_DIR=${default_base_dir}
+# Define o nome do arquivo de dependências Python que deve ser instalado via pip
+# dentro do container.
+REQUIREMENTS_FILE=${default_requirements_file}
+# Caminho para o arquivo modelo de configurações (.sample)
+SETTINGS_LOCAL_FILE_SAMPLE=${settings_local_file_sample}
+# Caminho para o arquivo real de configurações locais da aplicação
+SETTINGS_LOCAL_FILE=${settings_local_file}
+# serve para indicar o nome da branch principal do repositório Git (como main
+# ou master) e é utilizada em comandos que comparam alterações entre essa branch
+# de referência e a branch atual, especialmente durante execuções do pre-commit.
+GIT_BRANCH_MAIN=master
+
+# DEFINIÇÕES DE CONFIGURAÇÕES DE ACESSO AO BANCO
 DATABASE_NAME=${project_name}
 DATABASE_USER=postgres
 DATABASE_PASSWORD=postgres
@@ -222,49 +269,61 @@ DATABASE_HOST=db
 DATABASE_PORT=5432
 DATABASE_DUMP_DIR=${project_root_dir}/dump
 
-GIT_BRANCH_MAIN=master
-REQUIREMENTS_FILE=${default_requirements_file}
-
-SETTINGS_LOCAL_FILE_SAMPLE=${settings_local_file_sample}
-SETTINGS_LOCAL_FILE=${settings_local_file}
-BASE_DIR=${default_base_dir}
-
-WORK_DIR=/opt/app
-
-DOCKERFILE=${default_project_dockerfile}
-
+########## DEFINIÇÕES PARA USUÁRIOS PERSONALIZADO DENTRO DO CONTAINER ##########
+# Criar um usuário personalizado dentro do container Docker referente ao
+# container da aplicação (ex. Django). Isso garante que os arquivos criados ou
+modificados dentro do container tenham os mesmos IDs de usuário e grupo do
+sistema host, evitando, portanto, problemas de permissões e propriedade de
+# arquivos.
 USER_NAME=$(id -un)
 USER_UID=$(id -u)
 USER_GID=$(id -g)
 
-# Variáveis para definir a rede interna dos containers.
+########## DEFINIÇÕES DE CONFIGURAÇÃO PARA SUB-REDE PARA OS CONTAINER ##########
+# Cria uma rede bridge com sub-rede personalizada e gateway definido manualmente.
+# Util para quem usa VPN e precisa saber o ip do gateway
 DOCKER_IPAM_CONFIG_GATEWAY_IP=${default_docker_ipam_config_gateway_ip}
 DOCKER_IPAM_CONFIG_SUBNET=${default_docker_ipam_config_subment}
 
-# Variáveis utilizadas para adicionar uma rota no container "DB" para o container VPN
+################ DEFINIÇÕES DE CONFIGURAÇÃO PARA CONTAINER VPN #################
+# Variável  utilizada para definir o ip do container VPN
+# Também é utilizada para adicionar uma rota no container "DB" para o container
+# VPN
 DOCKER_VPN_IP=${default_docker_vpn_ip}
-ROUTE_NETWORK=
+# Define o path o diretório onde está o arquivo docker-compose.yaml
+DOCKER_VPN_WORKDIR
 
-# Variáveis necessárias para poder realizar a cópia do dump do banco do host remoto para local host.
-# A cópia é realizada pelo comando scp
+#### DEFINIÇÕES PARA FAZER CÓPIA DO DUMP DO BANCO VIA SCP PARA AMBIENTE COM VPN#
+# Variáveis necessárias para poder realizar a cópia do dump do banco do host
+# remoto para local host. A cópia é realizada pelo comando scp
 DBUSER_PEM_PATH=/your_path/dbuser.pem
 DOMAIN_NAME_USER=dbuser
 DOMAIN_NAME=dns.domain.local
 DATABASE_REMOTE_HOST=database_name_remote_host
 DATABASE_REMOTE_DUMP_PATH_DIR=/var/opt/backups/database_name_remote_host.tar.gz
 
-# Variáveis usadas para adiciona uma nova entrada no arquivo /etc/hosts no container DB,
-# permitindo que o sistema resolva nomes de dominío para o endereço IP especificado.
+###### DEFINIÇÕES DE CONFIGURAÇÕES DE HOSTS E ROTAS PARA AMBIENTE COM VPN ######
+# Variáveis usadas para adiciona uma nova entrada no arquivo /etc/hosts no
+# container "DB", permitindo que o sistema resolva nomes de dominío para o
+# endereço IP especificado.
 ETC_HOSTS="
 dns1.domain.local:10.10.1.144
 dns2.ifrn.local:10.10.1.244
 "
+# Variável usada na adição de rota estática à tabela de roteamento para permite
+# que o container "DB" acesse uma sub-rede específica (definida em $ROUTE_NETWORK)
+# via o IP da VPN interna ($DOCKER_VPN_IP)
+ROUTE_NETWORK=10.10.0.0/16
 
+# DEFINIÇÕES PARA CONFIGURAÇÕES DE TESTES AUTOMATIZADOS COM BEHAVE E SELENIUM ##
 BEHAVE_CHROME_WEBDRIVER=/usr/local/bin/chromedriver
 BEHAVE_BROWSER=chrome
 BEHAVE_CHROME_HEADLESS=true
 SELENIUM_GRID_HUB_URL=http://selenium_grid:4444/wd/hub
 TEMPLATE_TESTDB=template_testdb
+
+############# DEFINIÇÕES PARA CONFIGURAÇÕES DO UTILITÁRIO SDOCKER ##############
+SDOCKER_WORKDIR=$SDOCKER_WORKDIR
 
 COMPOSES_FILES="
 all:docker-compose.yml
