@@ -85,7 +85,7 @@ install_command_postgis
 ### MAIN
 ##############################################################################
 
-process_hosts_and_routes "$ETC_HOSTS" "$VPN_GATEWAY" "$ROUTE_NETWORK"
+process_hosts_and_routes "$ETC_HOSTS" "$DOCKER_VPN_IP" "$ROUTE_NETWORK"
 
 # Verifica se o banco de dados é local ou remoto
 if [ "$POSTGRES_HOST" = "db" ]; then

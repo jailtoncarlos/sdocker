@@ -1,4 +1,4 @@
-# Dockerfile-base-python-dev: Extensão para ambiente de desenvolvimento Python
+# Dockerfile-base-python-full-dev: Extensão para ambiente de desenvolvimento Python
 
 # Define uma imagem base de desenvolvimento, que contém um
 # ambiente Python configurado

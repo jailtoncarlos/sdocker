@@ -4,6 +4,7 @@
 ### DEFINIÇÕES DE VARÍAVEIS GLOBAIS
 ##############################################################################
 TAR_GZ=0
+ARG_OPTIONS=("$@")  # Converte os argumentos em um array
 
 POSTGRES_DB=${DATABASE_NAME:-$POSTGRES_DB}
 POSTGRES_USER=${DATABASE_USER:-$POSTGRES_USER}
@@ -130,8 +131,6 @@ function check_tar_gz() {
   fi
   return $cod_return
 }
-
-
 
 function get_sqldump_path() {
 # Função para definir o caminho completo do arquivo
@@ -462,10 +461,59 @@ function restaurar_dump_psql() {
       # Exibe o conteúdo do log em caso de erro
       cat /dump/restore.log
       echo_error "Falha ao restaurar o dump $sqldump, veja o erro acima."
+
+      # Extrair o nome da role de uma linha que contém uma mensagem como
+      # 'ERROR: role "<<user>>" does not exist'
+      # Usando grep e sed
+      role=$(grep 'ERROR:  role' /dump/restore.log | sed -n 's/.*role "\(.*\)" does not exist/\1/p')
+
+      # Usando awk
+      # role=$(awk -F'"' '/ERROR:  role/ {print $2}' /dump/restore.log)
+
+      if [ -n "$role" ]; then
+        echo_warning "Foi identificado que o arquivo dump '$sqldump'
+        contém uma referência a uma role (usuário ou grupo de usuários) chamada
+        '$role' que não existe no servidor PostgreSQL (host '$host',
+        porta $postgres_port)."
+
+        echo_info "Para corrigir o problema, disponibilizamos duas alternativa:
+         1. Use o comando 'docker db create-role $role' para criar a role '$role'
+            no servidor PostgreSQL.
+         2. Substituir '$role' por uma existente, como a padrão 'postgres', nesse
+           caso, execute o comando 'docker db restore replace-role postgres'.
+
+        Após a correção, tente restaurar o dump novamente."
+      fi
       exit 1
     fi
   else
     echo_warning "Arquivos de dump não encontrados."
+  fi
+}
+
+function replace_role() {
+  local role="$1"
+  local nova_role="$2"
+  local sql_dump="$3"
+
+  # Verifica se a quantidade de argumentos é menor que 2
+  if [ ${#ARG_OPTIONS[@]} -lt 3 ]; then
+    echo_error "O comando 'replace-role' requer dois argumentos,
+    o nome da 'role' a ser substituída e a nova 'role' a ser usada.
+    Exemplo: 'docker db restore replace-role <<role>> <<nova_role>>'.
+    Para a nova <<nova_role>>, você pode a role padrão 'postgres'."
+    exit 1
+  fi
+  echo "--- Substituindo todas as ocorrências de 'OWNER TO $role' por 'OWNER TO $nova_role'
+  no arquivo de dump $sql_dump ..."
+  echo ">>> sed -i 's/OWNER TO $role;/OWNER TO $nova_role;/g' $sql_dump"
+  sed -i "s/OWNER TO $role;/OWNER TO $nova_role;/g" $sql_dump
+  return_code=$?
+  if [ $return_code -eq 0 ]; then
+    echo_success "Substituição concluíd com sucesso!"
+  else
+    echo_error "Falha ao substituir a role $role por $nova_role."
+    exit $return_code
   fi
 }
 
@@ -482,14 +530,13 @@ function restaurar_dump_psql() {
 ##############################################################################
 ### MAIN
 ##############################################################################
-# SQLDUMP - passagem por referência
-get_sqldump_path "$ZIPDUMP" "$DIR_DUMP" SQLDUMP
+get_sqldump_path "$ZIPDUMP" "$DIR_DUMP" SQLDUMP # SQLDUMP - passagem por referência
 
 echo "dir_dump = $DIR_DUMP"
 echo "SQLDUMP = $SQLDUMP"
 echo "ZIPDUMP = $ZIPDUMP"
 
-# Chamar a função para obter o host e a prota correta
+# Chamar a função para obter o host e a porta correta
 read host port <<< $(get_host_port "$POSTGRES_USER" "$POSTGRES_HOST" "$POSTGRES_PORT" "$POSTGRES_PASSWORD")
 if [ $? -gt 0 ]; then
   echo_error "Não foi possível conectar ao banco de dados."
@@ -509,6 +556,11 @@ if is_script_initdb && [ "$db_exists" -eq 0 ]; then
 fi
 
 has_restore=0
+
+if [ "${ARG_OPTIONS[0]}" = "replace-role" ]; then
+  replace_role "${ARG_OPTIONS[1]}" "${ARG_OPTIONS[2]}" "$SQLDUMP"
+fi
+
 
 echo "--- Iniciando processo de restauração do dump ..."
 

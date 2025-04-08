@@ -1,8 +1,8 @@
 # https://forums.docker.com/t/in-one-stage-we-mount-type-bind-source-package-json-but-in-another-stage-we-simply-copy-it/139517
 
-# Dockerfile-base-python-nodejs-dev: Extensão para ambiente Python + Node.js
+# Dockerfile-base-python-full-nodejs-dev: Extensão para ambiente Python + Node.js
 
-# Similar ao Dockerfile-base-python-dev, mas baseado em uma imagem que inclui
+# Similar ao Dockerfile-base-python-full-dev, mas baseado em uma imagem que inclui
 # Node.js, adequada para projetos que utilizam tanto backend em Python quanto
 # frontend em Node.js.
 

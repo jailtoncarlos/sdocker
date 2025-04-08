@@ -23,8 +23,13 @@ function read_ini() {
     local section=$2
     local key=$3
 
-    # Primeiro, encontrar a seção correta
-    value=$(sed -nr "/^\[$section\]/,/^\[/{/^$key[ ]*=/ s/.*=[ ]*//p}" "$file")
+    # Usa delimitadores alternativos para evitar conflitos com `/`
+    value=$(awk -F= -v section="$section" -v key="$key" '
+        $0 ~ "\\[" section "\\]" {in_section=1; next}
+        in_section && $0 ~ "^\\[" {in_section=0}
+        in_section && $1 ~ key {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit}
+    ' "$file")
+
     echo "$value"
 }
 
@@ -35,31 +40,32 @@ function read_ini() {
 
 # Função para ler todas as chaves e valores de uma seção e preencher o dicionário passado como argumento
 function read_section() {
-    local file=$1
-    local section=$2
-    local -n dict=$3  # Referência ao dicionário passado como argumento
+    local file="$1"
+    local section="$2"
+    local array_name="$3"  # Nome do array passado como string
 
-    # Inicializar flag de erro
-    local success=1
+    # Inicializa o array como vazio
+    eval "$array_name=()"
 
-    # Verifica se o arquivo existe e se a seção especificada está presente
+    # Verifica se o arquivo existe e a seção especificada está presente
     if [[ -f "$file" ]]; then
-        # Extrair todas as chaves e valores da seção especificada
+        # Extrai todas as chaves e valores da seção especificada
         while IFS='=' read -r key value; do
-            # Remover espaços em branco ao redor de key e value
+            # Remove espaços em branco ao redor de key e value
             key=$(echo "$key" | xargs)
             value=$(echo "$value" | xargs)
 
-            # Adiciona chave-valor ao dicionário se a linha pertence à seção correta
+            # Adiciona chave:valor ao array se a linha pertence à seção correta
             if [[ -n "$key" && "$key" != \[*\] ]]; then
-                dict["$key"]="$value"
-                success=0  # Define flag para indicar sucesso
+                eval "$array_name+=(\"$key:$value\")"
             fi
         done < <(sed -n "/^\[$section\]/,/^\[/{/^[^[]/p;}" "$file")
+        return 0  # Sucesso
     fi
 
-    return $success
+    return 1  # Falha
 }
+
 # Exemplo de uso:
 # Declaração do dicionário
 #declare -A environment_conditions
