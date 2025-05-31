@@ -1,24 +1,63 @@
-# Imagem baseada no Debian Bullseye (Debian 11),
-FROM python:3.12-slim-bullseye
+''# 🏗️ Stage de build (opcional se não houver pacotes compiláveis)
+FROM python:3.12-slim AS builder
 
-# Instala dependências do sistema necessárias para o Playwright
-RUN apt-get update && apt-get install -y \
-    libnss3 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libgtk-3-0 \
-    libx11-xcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    libgbm1 \
-    libpango-1.0-0 \
-    libcups2 \
+# Argumentos para usuário
+ARG USER_UID=1000
+ARG USER_GID=1000
+ARG USER_NAME=django
+
+# Instala dependências para build de pacotes Python nativos
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Diretório de trabalho temporário
+WORKDIR /opt/app
 
-# Instala o Playwright e os navegadores
-RUN pip install playwright && playwright install
+# Copia apenas os arquivos de dependências
+COPY requirements.txt ./
+
+# Instala as dependências no diretório temporário
+RUN pip install --upgrade pip && \
+    pip install --prefix=/install -r requirements.txt
+
+
+# 🚀 Stage final
+FROM python:3.12-slim AS runtime
+
+# Argumentos para usuário
+ARG USER_UID=1000
+ARG USER_GID=1000
+ARG USER_NAME=django
+
+# Instala utilitários mínimos e cria usuário seguro
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    procps \
+    sudo \
+    && groupadd -g "${USER_GID}" "${USER_NAME}" \
+    && useradd -u "${USER_UID}" -g "${USER_GID}" -m -s /bin/bash "${USER_NAME}" \
+    && echo "${USER_NAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USER_NAME} \
+    && chmod 0440 /etc/sudoers.d/${USER_NAME}" \
+    && rm -rf /var/lib/apt/lists/*
+
+# Diretório da aplicação
+WORKDIR /opt/app/backend
+
+# Copia as dependências instaladas do builder
+COPY --from=builder /install /usr/local
+
+# Adiciona código da aplicação
+COPY . .
+
+# Permissões
+RUN chown -R ${USER_NAME}:${USER_GID} /opt/app
+
+USER ${USER_NAME}
+
+# Porta padrão Django
+EXPOSE 8000
 
 # Define o comando padrão do contêiner (CMD)
 # Esse comando exibe uma mensagem e entra em modo de espera infinito

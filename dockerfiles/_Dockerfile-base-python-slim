@@ -1,0 +1,26 @@
+# Imagem baseada no Debian Bullseye (Debian 11),
+FROM python:3.12-slim-bullseye
+
+# Instala dependências do sistema necessárias para o Playwright
+RUN apt-get update && apt-get install -y \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libgtk-3-0 \
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libcups2 \
+    && rm -rf /var/lib/apt/lists/*
+
+
+# Instala o Playwright e os navegadores
+RUN pip install playwright && playwright install
+
+# Define o comando padrão do contêiner (CMD)
+# Esse comando exibe uma mensagem e entra em modo de espera infinito
+# útil em contêineres de desenvolvimento que precisam permanecer ativos
+CMD ["/bin/sh", "-c", "echo 'Starting dev container'; sleep infinity"]

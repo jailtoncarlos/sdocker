@@ -601,8 +601,8 @@ fi
 echo "--- Iniciando processo de restauração do dump ..."
 
 if [ "$SQLDUMP" = "$DIR_DUMP/" ]; then
-  echo_error "Não foi encontrado arquivo de dump!"
-  exit 1
+  echo_warning "Não foi encontrado arquivo de dump!"
+  exit 0
 fi
 
 # -e verifica se um caminho (arquivo ou diretório) existe.
@@ -629,9 +629,8 @@ if [ "$has_restore" -eq 1 ]; then
 fi
 
 if [ "$has_restore" -eq 0 ] && [ ! -e "$SQLDUMP" ]; then
-  echo_error "Não foi encontrado arquivo de dump!"
-  #Interropção com código de saída difente de zero para indicar um erro.
-  exit 1
+  echo_warning "Não foi encontrado arquivo de dump!"
+  exit 0
 elif [ -e "$SQLDUMP" ]; then
   echo_success "Arquivo dump descompactado encontrado!"
 fi
