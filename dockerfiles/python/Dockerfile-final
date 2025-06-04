@@ -1,0 +1,22 @@
+# -----------------------------------------
+# Arquivo: Dockerfile.final
+# Estágio: final
+# Objetivo: imagem pronta para testes ou execução da aplicação
+# -----------------------------------------
+FROM playwright:latest AS final
+
+# 8.1. Definir diretório de trabalho
+WORKDIR /app
+
+# 8.2. (Opcional) Copiar arquivos de dependências e instalar pacotes Python
+# COPY requirements.txt /app/
+# RUN pip install --no-cache-dir -r requirements.txt
+
+# 8.3. (Opcional) Copiar código-fonte da aplicação
+# COPY . /app/
+
+# 8.4. (Opcional) Definir porta da aplicação (se for serviço web)
+# EXPOSE 8000
+
+# 8.5. (Opcional) Comando padrão para iniciar a aplicação
+# CMD ["gunicorn", "meu_projeto.wsgi:application", "--bind", "0.0.0.0:8000"]

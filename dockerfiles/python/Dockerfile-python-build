@@ -1,0 +1,53 @@
+# -----------------------------------------
+# Arquivo: Dockerfile.python-build
+# Estágio: python-build
+# Objetivo: adicionar ferramentas de compilação e bibliotecas para dependências nativas
+# -----------------------------------------
+ARG SDOCKER_PYTHON_RUNTIME_USER_IMAGE=sdocker-python-runtime-user:latest
+FROM ${SDOCKER_PYTHON_RUNTIME_USER_IMAGE} AS sdocker-python-build
+
+# 2.1. Ferramentas de compilação e bibliotecas de sistema
+RUN apt-get update -qq && apt-get install -yqq --no-install-recommends \
+      build-essential \        # Ferramentas de compilação (C/C++)
+      gfortran \                # Compilador Fortran (pacotes científicos)
+      swig \                    # Gerador de interfaces C/C++ para várias linguagens
+      libffi-dev \              # Biblioteca cffi para invocar código C
+      libssl-dev \              # Bibliotecas de desenvolvimento OpenSSL (SSL/TLS) \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2.2. Dependências para conectar a bancos de dados e autenticação LDAP/SASL
+RUN apt-get update -qq && apt-get install -yqq --no-install-recommends \
+      libpq-dev \               # Bibliotecas de desenvolvimento PostgreSQL
+      freetds-dev \             # Bibliotecas de desenvolvimento para SQL Server / Sybase
+      libldap2-dev \            # Bibliotecas de desenvolvimento LDAP
+      libsasl2-dev \            # Bibliotecas de desenvolvimento SASL \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2.3. Dependências para processamento de imagens e compressão
+RUN apt-get update -qq && apt-get install -yqq --no-install-recommends \
+      libjpeg-dev \             # Bibliotecas de desenvolvimento para JPEG
+      libfreetype6-dev \        # Bibliotecas de desenvolvimento para fontes TrueType
+      zlib1g-dev \              # Bibliotecas de desenvolvimento para zlib (compressão) \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2.4. Dependências para processamento de PDF e PostScript
+RUN apt-get update -qq && apt-get install -yqq --no-install-recommends \
+      ghostscript \             # Processador de arquivos PostScript e PDF
+      qpdf \                    # Manipulação de arquivos PDF (extração, compactação, transformação) \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2.5. Ferramentas auxiliares adicionais
+RUN apt-get update -qq && apt-get install -yqq --no-install-recommends \
+      wget \                    # Download de arquivos (HTTP, HTTPS, FTP)
+      curl \                    # Transferência de dados (HTTP, FTP)
+      git \                     # Controle de versão Git
+      vim \                     # Editor de texto em terminal
+      cron \                    # Agendamento de tarefas periódicas
+      openssh-server \          # Servidor SSH para acesso remoto
+      ntpdate                   # Sincronização de data/hora via NTP \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*

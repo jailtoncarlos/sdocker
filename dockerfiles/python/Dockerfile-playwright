@@ -1,0 +1,13 @@
+# -----------------------------------------
+# Arquivo: Dockerfile.playwright
+# Estágio: playwright
+# Objetivo: instalação do Playwright e dos navegadores suportados
+# -----------------------------------------
+ARG SDOCKER_CHROME_IMAGE=sdocker-python-app:latest
+FROM ${SDOCKER_CHROME_IMAGE} AS sdocker-python-app-playwright
+
+# 7.1. Instalação do pacote Python 'playwright'
+RUN pip install playwright
+
+# 7.2. Download de binários de navegadores (Chromium, Firefox e WebKit)
+RUN playwright install --with-deps

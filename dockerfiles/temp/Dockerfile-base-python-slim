@@ -1,4 +1,4 @@
-''# 🏗️ Stage de build (opcional se não houver pacotes compiláveis)
+# 🏗️ Stage de build (opcional se não houver pacotes compiláveis)
 FROM python:3.12-slim AS builder
 
 # Argumentos para usuário

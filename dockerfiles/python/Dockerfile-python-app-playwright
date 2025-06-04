@@ -1,0 +1,14 @@
+# -----------------------------------------
+# Arquivo: Dockerfile.python-wkhtmltopdf
+# Estágio: python-wkhtmltopdf
+# Objetivo: adicionar wkhtmltopdf para conversão de HTML para PDF
+# -----------------------------------------
+ARG SDOCKER_PYTHON_BUILD_IMAGE=sdocker-python-build:latest
+FROM ${SDOCKER_PYTHON_BUILD_IMAGE} AS sdocker-python-wkhtmltopdf
+
+# 3.1. Download e extração do wkhtmltopdf
+ADD https://github.com/wkhtmltopdf/wkhtmltopdf/releases/download/0.12.4/wkhtmltox-0.12.4_linux-generic-amd64.tar.xz /root/wkhtmltox.tar.xz
+RUN tar -xvf /root/wkhtmltox.tar.xz -C /root && \
+    mv /root/wkhtmltox/bin/wkhtmlto* /usr/bin && \
+    fc-cache -f -v && \
+    rm /root/wkhtmltox.tar.xz
