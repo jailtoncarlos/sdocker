@@ -1,0 +1,80 @@
+# -----------------------------------------
+# Arquivo: Dockerfile.python-app
+# Estágio: python-app
+# Objetivo: ponto de partida para copiar código da aplicação e instalar dependências Python
+# Define uma imagem base de desenvolvimento, que contém um ambiente Python configurado
+# -----------------------------------------
+ARG SDOCKER_PYTHON_DEV_COMPLETE_IMAGE=sdocker-python-dev-complete:latest
+FROM ${SDOCKER_PYTHON_DEV_COMPLETE_IMAGE} AS sdocker-python-app
+
+# -----------------------------------------
+# Argumentos de build que serão passados ao contêiner
+# -----------------------------------------
+ARG WORK_DIR                # Diretório de trabalho no contêiner
+ARG REQUIREMENTS_FILE       # Arquivo de requisitos para instalar dependências
+ARG USER_NAME               # Nome do usuário padrão no contêiner
+
+# -----------------------------------------
+# Persistência dos argumentos como variáveis de ambiente
+# Permite que sejam usadas no runtime do contêiner
+# -----------------------------------------
+ENV WORK_DIR=${WORK_DIR}
+ENV REQUIREMENTS_FILE=${REQUIREMENTS_FILE}
+ENV USER_NAME=${USER_NAME}
+
+# -----------------------------------------
+# Marca o diretório especificado em $WORK_DIR como "seguro" para o Git
+# Evita avisos quando o Git interage com o diretório
+# -----------------------------------------
+RUN git config --global --add safe.directory $WORK_DIR
+
+# -----------------------------------------
+# Define o usuário padrão para o contêiner
+# Garante que as operações sejam executadas com as permissões do usuário
+# -----------------------------------------
+USER $USER_NAME
+
+# -----------------------------------------
+# Define o diretório de trabalho (WORKDIR) para o contêiner
+# Todas as instruções subsequentes serão executadas a partir deste diretório
+# -----------------------------------------
+WORKDIR $WORK_DIR
+
+# -----------------------------------------
+# Copia o conteúdo do diretório de trabalho local para o contêiner
+# O diretório destino é especificado por $WORK_DIR
+# O comando COPY é executado com o usuário especificado ($USER_NAME)
+# -----------------------------------------
+COPY --chown=$USER_NAME:$USER_NAME . $WORK_DIR
+
+# -----------------------------------------
+# Instala as dependências do Python usando o arquivo requirements especificado
+# O cache de pip é montado em /opt/.cache para acelerar futuras instalações
+# A instalação é feita com a flag --user, para que os pacotes sejam instalados
+# no diretório do usuário
+# -----------------------------------------
+RUN --mount=type=cache,target=/opt/.cache pip install \
+    --user -r ${REQUIREMENTS_FILE}
+
+# -----------------------------------------
+# Instala django-extensions para habilitar o uso do runserver_plus
+# -----------------------------------------
+RUN pip install django-extensions
+
+# -----------------------------------------
+# Inclui o diretório $HOME/.local/bin no PATH do contêiner
+# Permite que pacotes instalados com --user sejam acessíveis globalmente
+# -----------------------------------------
+ENV PATH="$PATH:$HOME/.local/bin"
+
+# -----------------------------------------
+# Define o diretório de trabalho novamente para garantir consistência
+# -----------------------------------------
+WORKDIR $WORK_DIR
+
+# -----------------------------------------
+# Define o comando padrão do contêiner (CMD)
+# Este comando exibe uma mensagem e entra em modo de espera infinito,
+# útil em contêineres de desenvolvimento que precisam permanecer ativos
+# -----------------------------------------
+CMD ["/bin/sh", "-c", "echo 'Starting dev container'; sleep infinity"]

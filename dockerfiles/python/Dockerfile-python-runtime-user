@@ -1,0 +1,88 @@
+# -----------------------------------------
+# Arquivo: Dockerfile.python-runtime-user
+# Objetivo: Configura a imagem básica com um ambiente Python e um usuário configurável.
+#            Serve como base para outras imagens.
+# -----------------------------------------
+
+# Define uma imagem base Python com configurações de usuário
+ARG SDOCKER_PYTHON_RUNTIME_IMAGE=sdocker-python-runtime:latest
+FROM ${SDOCKER_PYTHON_RUNTIME_IMAGE} AS sdocker-python-runtime-user
+
+# -----------------------------------------
+# Argumentos para definir o ID de usuário, ID de grupo e nome do usuário no contêiner
+# -----------------------------------------
+ARG USER_UID   # ID de usuário personalizado para o novo usuário
+ARG USER_GID   # ID de grupo personalizado para o novo usuário
+ARG USER_NAME  # Nome do usuário a ser criado no contêiner
+
+# -----------------------------------------
+# Persistência dos argumentos como variáveis de ambiente
+# Permite que essas configurações sejam usadas durante o runtime
+# -----------------------------------------
+ENV USER_UID=${USER_UID}
+ENV USER_GID=${USER_GID}
+ENV USER_NAME=${USER_NAME}
+
+# -----------------------------------------
+# Muda o usuário atual para `root` para realizar operações administrativas
+# -----------------------------------------
+USER root
+
+# -----------------------------------------
+# Instala pacotes essenciais, incluindo OpenSSH e sudo
+# - `openssh-server` e `openssh-client`: necessários para conexões SSH
+# - `procps`: fornece comandos como `ps` e `top` para monitoramento de processos
+# - `sudo`: permite a elevação de permissões para o usuário
+# -----------------------------------------
+RUN apt-get update && \
+    apt-get install -yqq --fix-missing --no-install-recommends \
+      openssh-server \
+      openssh-client \
+      procps \
+      sudo && \
+    apt-get -y autoremove && \
+    apt-get clean && \
+    rm -rf /var/cache/apt/* && \
+    rm -rf /var/lib/apt/lists/*
+
+# -----------------------------------------
+# Cria um novo grupo e um usuário com base nos IDs fornecidos (USER_UID e USER_GID)
+# - Configura o shell padrão do usuário como `/bin/bash`
+# - Adiciona o usuário criado ao grupo root, permitindo acesso elevado
+# -----------------------------------------
+RUN groupadd -g "${USER_GID}" $USER_NAME && \
+    useradd -u "${USER_UID}" -g "${USER_GID}" \
+      -m --no-log-init -s /bin/bash $USER_NAME && \
+    usermod -G root $USER_NAME
+
+# -----------------------------------------
+# Adiciona o diretório `$HOME/.local/bin` ao PATH
+# Facilita o acesso a pacotes Python instalados localmente
+# -----------------------------------------
+ENV PATH="$PATH:/home/${USER_NAME}/.local/bin"
+
+# -----------------------------------------
+# Configurações opcionais para suporte ao sudo:
+# - Permite que o usuário execute comandos sudo sem senha
+# - Define uma senha inicial para o usuário
+# -----------------------------------------
+RUN echo "$USER_NAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USER_NAME && \
+    chmod 0440 /etc/sudoers.d/$USER_NAME && \
+    echo "$USER_NAME:mudar@123" | chpasswd
+
+# -----------------------------------------
+# Gera uma chave SSH para o usuário caso o nome seja "customuser"
+# - Útil para identificar usuários com uma chave SSH personalizada
+# -----------------------------------------
+RUN if [ "$USER_NAME" = "customuser" ]; then \
+        mkdir -p /home/$USER_NAME/.ssh && \
+        ssh-keygen -t ed25519 -C "Usuário $USER_NAME" \
+                   -f /home/$USER_NAME/.ssh/id_ed25519_$USER_NAME -N "" && \
+        chown -R $USER_NAME:$USER_NAME /home/$USER_NAME/.ssh; \
+    fi
+
+# -----------------------------------------
+# Atualiza o pip e instala pre-commit globalmente
+# -----------------------------------------
+RUN python -m pip install --upgrade pip && \
+    pip install pre-commit

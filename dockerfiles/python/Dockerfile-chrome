@@ -1,0 +1,29 @@
+# -----------------------------------------
+# Arquivo: Dockerfile.chrome
+# Estágio: chrome
+# Objetivo: instalação isolada do Google Chrome e do ChromeDriver
+# -----------------------------------------
+ARG SDOCKER_DEV_COMPLETE_IMAGE=sdocker-python-app-playwright:latest
+FROM ${SDOCKER_DEV_COMPLETE_IMAGE} AS sdocker-python_app-chrome
+
+# 6.1. Adiciona chave GPG oficial do Google e repositório do Chrome
+RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub \
+    | gpg --dearmor \
+    | tee /etc/apt/trusted.gpg.d/google.gpg >/dev/null && \
+    echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" \
+    >> /etc/apt/sources.list.d/google.list
+
+# 6.2. Instalação do navegador Google Chrome Stable
+RUN apt-get update -qq && apt-get install -yqq --no-install-recommends \
+      google-chrome-stable \
+    && apt-get -y autoremove \
+    && apt-get clean \
+    && rm -rf /var/cache/apt/* \
+    && rm -rf /var/lib/apt/lists/*
+
+# 6.3. Download e instalação do ChromeDriver compatível
+RUN CHROME_DRIVER_VERSION=$(wget -qO- https://chromedriver.storage.googleapis.com/LATEST_RELEASE) && \
+    wget -q "https://chromedriver.storage.googleapis.com/${CHROME_DRIVER_VERSION}/chromedriver_linux64.zip" && \
+    unzip chromedriver_linux64.zip && \
+    mv chromedriver /usr/local/bin/chromedriver && \
+    rm chromedriver_linux64.zip

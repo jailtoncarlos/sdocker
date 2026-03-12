@@ -38,7 +38,43 @@ source "$UTILS_SH"
 ZIPDUMP=$(ls $DIR_DUMP/*.{bkp.gz,sql.gz,tar.gz,zip} 2>/dev/null  | head -n 1)
 SQLDUMP=$(ls $DIR_DUMP/*.sql 2>/dev/null)
 
-echo "DIR_DUMP: $DIR_DUMP, ZIPDUMP: $ZIPDUMP, SQLDUMP: $SQLDUMP"
+echo "
+DIR_DUMP: $DIR_DUMP,
+ZIPDUMP: $ZIPDUMP,
+SQLDUMP: $SQLDUMP"
+
+# Lista arquivos .sql
+sql_files=()
+for file in "$DIR_DUMP"/*.sql; do
+  [[ -f "$file" ]] && sql_files+=("$file")
+done
+
+# Lista arquivos compactados
+zip_files=()
+for file in "$DIR_DUMP"/*.{bkp.gz,sql.gz,tar.gz,zip}; do
+  [[ -f "$file" ]] && zip_files+=("$file")
+done
+
+if [ "${#sql_files[@]}" -gt 1 ]; then
+  echo "--- Múltiplos arquivos .sql encontrados. Escolha um:"
+  select opt in "${sql_files[@]}"; do
+    [[ -n "$opt" ]] && { SQLDUMP="$opt"; break; }
+  done
+elif [ "${#sql_files[@]}" -eq 1 ]; then
+  SQLDUMP="${sql_files[0]}"
+fi
+
+# Fallback para compactados se não houver .sql
+if [ -z "$SQLDUMP" ] && [ "${#zip_files[@]}" -gt 0 ]; then
+  if [ "${#zip_files[@]}" -gt 1 ]; then
+    echo "--- Múltiplos arquivos compactados encontrados. Escolha um:"
+    select opt in "${zip_files[@]}"; do
+      [[ -n "$opt" ]] && { ZIPDUMP="$opt"; break; }
+    done
+  else
+    ZIPDUMP="${zip_files[0]}"
+  fi
+fi
 
 ##############################################################################
 ### VALIDAÇÕES DE ARQUIVOS NECESSÁRIOS
@@ -565,8 +601,8 @@ fi
 echo "--- Iniciando processo de restauração do dump ..."
 
 if [ "$SQLDUMP" = "$DIR_DUMP/" ]; then
-  echo_error "Não foi encontrado arquivo de dump!"
-  exit 1
+  echo_warning "Não foi encontrado arquivo de dump!"
+  exit 0
 fi
 
 # -e verifica se um caminho (arquivo ou diretório) existe.
@@ -593,9 +629,8 @@ if [ "$has_restore" -eq 1 ]; then
 fi
 
 if [ "$has_restore" -eq 0 ] && [ ! -e "$SQLDUMP" ]; then
-  echo_error "Não foi encontrado arquivo de dump!"
-  #Interropção com código de saída difente de zero para indicar um erro.
-  exit 1
+  echo_warning "Não foi encontrado arquivo de dump!"
+  exit 0
 elif [ -e "$SQLDUMP" ]; then
   echo_success "Arquivo dump descompactado encontrado!"
 fi

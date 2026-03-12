@@ -563,7 +563,7 @@ POSTGRES_DB=${DATABASE_NAME:-$POSTGRES_DB}
 POSTGRES_HOST=${DATABASE_HOST:-$POSTGRES_HOST}
 POSTGRES_PORT=${DATABASE_PORT:-$POSTGRES_PORT}
 POSTGRES_EXTERNAL_PORT=${POSTGRES_EXTERNAL_PORT:-$POSTGRES_PORT}
-#POSTGRESQL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/"
+# postgresql://$POSTGRES_USER:******@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB
 
 # Identifica se o caminho é relativo.
 # Se for, adiciona o caminho do projeto
@@ -2378,18 +2378,23 @@ function service_db_wait() {
 
   # Loop until para continuar tentando até que _return_func seja igual a 1
   until [ $_return_func -eq 0 ]; do
+
+    $COMPOSE logs --tail=4 $SERVICE_DB_NAME
+
     echo_warning "Aguarde ...
-    Tentando conectar ao servidor de banco de dados,
-    Caso deseje monitorar o log do servidor de banco de dados,
-    abra um novo terminal e execute 'sdocker db logs'."
+    Tentando conectar ao servidor de banco de dados POSTGRESQL:
+    $POSTGRES_USER:******@$POSTGRES_HOST:$POSTGRES_PORT"
+
+    # Chamada da função e captura de saída
     psql_output=$(compose_service_db_get_host_port)
     _return_func=$?
 
-    # Se a função retornar com sucesso (_return_func igual a 1)
-    if [ $_return_func -eq 0 ]; then
-      # Extrai o host e a porta do output
-      read -r host port <<< "$psql_output"
-    fi
+    echo "Host e porta obtidos: $psql_output"
+    echo "Código de retorno da função: $_return_func"
+
+    # Extrai o host e a porta do output
+    # read -r host port <<< "$psql_output"
+
     # Pequena pausa antes de tentar novamente
     sleep 2
   done
@@ -2720,7 +2725,7 @@ DATABASES = {
     fi
   fi
 
-  command="python manage.py test_behave --behave_format progress --behave_stop --noinput"
+  command="python manage.py behave --behave_format progress --behave_stop --noinput"
   if docker container ls | grep -q "${COMPOSE_PROJECT_NAME}-${_service_name}-1"; then
     service_exec "$_service_name" "$command" $_option
   else
