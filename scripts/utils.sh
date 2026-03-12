@@ -72,36 +72,36 @@ function install_command() {
   local _command=$1       # O primeiro argumento é o nome do comando a ser instalado
   echo ">>> ${FUNCNAME[0]} $_command $_option"
 
-  # Verifica se o comando já está instalado
-  echo ">>> command -v $_command"
-  if command -v $_command &>/dev/null; then
-    echo "O comando $_command está disponível."
-    return
-  else
-    echo "O comando $_command não está disponível."
-    echo "--- Iniciando processo de instalação do comando $_command ..."
+  if command -v "$_command" >/dev/null 2>&1; then
+    echo "O comando '$_command' já está disponível."
+    return 0
   fi
 
-  # Instalação via MacPorts (para sistemas MacOS)
-  if command -v port &>/dev/null; then
-    echo ">>> sudo port install $_command"
-    sudo port install $_command
+  echo ">>> O comando '$_command' não está disponível."
 
-  # Instalação via Homebrew (para MacOS/Linux com brew)
-  elif command -v brew &>/dev/null; then
-    echo ">>> brew install $_command"
-    brew install $_command
+  if [[ "$(id -u)" -ne 0 ]]; then
+    echo "⚠️  Usuário atual não é root (ID=$(id -u)). Não é possível instalar '$_command'."
+    return 1
+  fi
 
-  # Instalação via apt-get (para distribuições Linux que utilizam apt-get)
-  elif command -v apt-get &>/dev/null; then
-    # Atualiza o apt-get se ainda não foi feito
-    if [ "$apt_get_has_update" != true ]; then
-      echo ">>> apt-get update > /dev/null"
-      apt-get update -y > /dev/null
-      apt_get_has_update=true
-    fi
-    echo ">>> apt-get install -y $_command > /dev/null"
-    apt-get install -y $_command > /dev/null
+  echo "--- Iniciando processo de instalação do comando $_command ..."
+
+  # Tenta detectar o gerenciador de pacotes
+  if command -v apt-get >/dev/null 2>&1; then
+    echo ">>> Instalando '$_command' via apt-get..."
+    apt-get update -y && apt-get install -y "$_command"
+  elif command -v apk >/dev/null 2>&1; then
+    echo ">>> Instalando '$_command' via apk..."
+    apk add --no-cache "$_command"
+  elif command -v yum >/dev/null 2>&1; then
+    echo ">>> Instalando '$_command' via yum..."
+    yum install -y "$_command"
+  elif command -v brew >/dev/null 2>&1; then
+    echo ">>> Instalando '$_command' via brew..."
+    brew install "$_command"
+  else
+    echo "❌ Nenhum gerenciador de pacotes conhecido disponível. Instalação de '$_command' falhou."
+    return 1
   fi
 }
 
