@@ -2354,13 +2354,20 @@ function django_migrations_exists() {
 
   local _psql="psql -h $host -p $port -U $POSTGRES_USER -d $POSTGRES_DB"
 
-  # Definindo o comando psql para verificar a presença de migrações
-  # -t: Remove o cabeçalho e as linhas em branco da saída.
-  local psql_cmd="$_psql -tc 'SELECT COUNT(*) > 0 FROM django_migrations;'"
+  # Verifica se o banco já tem as tabelas de controle do Django. Aceita django_migrations ou
+  # django_session: há dumps (por exemplo, restaurações parciais ou bases mascaradas) que trazem
+  # as sessões mas não o histórico de migrações.
+  # -t: remove o cabeçalho e as linhas em branco; -A: saída sem alinhamento ("t" ou "f").
+  local psql_cmd="$_psql -tAc \"SELECT to_regclass('django_migrations') IS NOT NULL OR to_regclass('django_session') IS NOT NULL;\""
 
   psql_output=$($COMPOSE exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$SERVICE_DB_NAME" sh -c "$psql_cmd")
   return_func=$?
   echo "$psql_output"
+  # Conexão ok, mas nenhuma das tabelas existe: falha, como antes (quando o SELECT em
+  # django_migrations dava erro por tabela inexistente).
+  if [ $return_func -eq 0 ] && [ "$(echo "$psql_output" | xargs)" != "t" ]; then
+    return_func=1
+  fi
   return $return_func
 }
 
@@ -2425,12 +2432,12 @@ function database_wait() {
   fi
 
   echo ""
-  echo "--- Verificando se a tabela \"django_migrations\" existe no banco \"$POSTGRES_DB\" ..."
+  echo "--- Verificando se a tabela \"django_migrations\" ou \"django_session\" existe no banco \"$POSTGRES_DB\" ..."
   psql_output=$(django_migrations_exists)
   _return_func=$?
   if [ $_return_func -eq 1 ]; then
     echo ""
-    echo_warning "Banco \"$POSTGRES_DB\" existe, porém tabela \"django_migrations\" não existe!"
+    echo_warning "Banco \"$POSTGRES_DB\" existe, porém as tabelas \"django_migrations\" e \"django_session\" não existem!"
     echo "Deseja iniciar a restauração do dump agora?"
     read -r -p "Pressione 'S' para confirmar ou [ENTER] para ignorar: " resposta
     resposta=$(echo "$resposta" | tr '[:lower:]' '[:upper:]')  # Converter para maiúsculas
@@ -2450,7 +2457,7 @@ function database_wait() {
       exit 1
     fi
   else
-    echo_success "Tabela \"django_migrations\" identificada!"
+    echo_success "Tabela de controle do Django identificada!"
   fi
 
   echo ""
