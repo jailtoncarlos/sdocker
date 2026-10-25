@@ -2360,12 +2360,15 @@ function django_migrations_exists() {
   # -t: remove o cabeçalho e as linhas em branco; -A: saída sem alinhamento ("t" ou "f").
   local psql_cmd="$_psql -tAc \"SELECT to_regclass('django_migrations') IS NOT NULL OR to_regclass('django_session') IS NOT NULL;\""
 
-  psql_output=$($COMPOSE exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$SERVICE_DB_NAME" sh -c "$psql_cmd")
+  # -T: sem TTY. Com TTY (padrão do `compose exec`), o psql pode abrir o pager e a saída chega com
+  # sequências de escape e CRLF, o que quebraria a comparação abaixo.
+  psql_output=$($COMPOSE exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" "$SERVICE_DB_NAME" sh -c "$psql_cmd")
   return_func=$?
   echo "$psql_output"
   # Conexão ok, mas nenhuma das tabelas existe: falha, como antes (quando o SELECT em
-  # django_migrations dava erro por tabela inexistente).
-  if [ $return_func -eq 0 ] && [ "$(echo "$psql_output" | xargs)" != "t" ]; then
+  # django_migrations dava erro por tabela inexistente). O `\r` é removido por garantia, caso a
+  # saída chegue com CRLF.
+  if [ $return_func -eq 0 ] && [ "$(printf '%s' "$psql_output" | tr -d '\r' | xargs)" != "t" ]; then
     return_func=1
   fi
   return $return_func
