@@ -1,0 +1,59 @@
+# -----------------------------------------
+# Arquivo: Dockerfile.python-dev-complete
+# Estágio: python-dev-complete
+# Objetivo: reunir todas as dependências de sistema para desenvolvimento completo
+# -----------------------------------------
+ARG SDOCKER_PYTHON_WKHTMLTOPDF_IMAGE=sdocker-python-wkhtmltopdf:latest
+FROM ${SDOCKER_PYTHON_WKHTMLTOPDF_IMAGE} AS sdocker-python-dev-complete
+
+
+# 4.1. Dependências para XML, XSLT e segurança de XML
+RUN apt-get update -qq && apt-get install -yqq --no-install-recommends \
+      libxml2-dev \             # Bibliotecas de desenvolvimento para manipulação de XML
+      libxslt1-dev \            # Bibliotecas de desenvolvimento para XSLT
+      libxmlsec1-dev \          # Bibliotecas de desenvolvimento para XML Security (assinatura, criptografia) \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 4.2. Bibliotecas de álgebra linear científica (BLAS, LAPACK, ATLAS)
+RUN apt-get update -qq && apt-get install -yqq --no-install-recommends \
+      libblas-dev \             # BLAS: operações básicas de álgebra linear
+      liblapack-dev \           # LAPACK: operações avançadas de álgebra linear
+      libatlas-base-dev \       # ATLAS: implementação otimizada de BLAS/LAPACK \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 4.3. Dependências gráficas e X11
+RUN apt-get update -qq && apt-get install -yqq --no-install-recommends \
+      libglu1-mesa \            # Mesa GLU: utilitários OpenGL
+      libcairo2 \               # Biblioteca Cairo para renderização 2D
+      libcairo2-dev \           # Headers para Cairo (desenvolvimento)
+      libcups2 \                # Biblioteca CUPS (impressão)
+      libdbus-glib-1-2 \        # Integração D-Bus / GLib
+      libxinerama1 \            # Suporte a multi-monitor (Xinerama)
+      libsm6 \                  # Session Management (X11)
+      libx11-dev \              # Headers para X11 (GUI)
+      libxext-dev \             # Extensões X11
+      libxrender-dev \          # Extensão X Render (X11)
+      libgdk-pixbuf2.0-0 \      # GDK-Pixbuf: carregamento/visualização de imagens
+      libpango-1.0-0 \          # Pango: layout e renderização de texto multilíngue
+      libpangocairo-1.0-0 \     # Pango + Cairo: renderização de texto em superfícies gráficas
+      fontconfig \              # Biblioteca para configuração e descoberta de fontes
+      libfontconfig1-dev \      # Headers Fontconfig (descoberta de fontes)
+      ttf-mscorefonts-installer \ # Instalador de fontes TrueType da Microsoft \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 4.4. Ferramentas de sincronização de tempo e limpeza de arquivos temporários
+RUN apt-get update -qq && apt-get install -yqq --no-install-recommends \
+      ntpdate \                 # Sincronização de data/hora via NTP
+      tmpreaper \               # Limpeza automática de arquivos temporários
+      shared-mime-info          # Banco de dados de tipos MIME \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 4.5. Instalação do NLTK e download de pacotes de dados
+RUN --mount=type=cache,target=/root/.cache/pip pip install nltk==3.8
+RUN python -c "import nltk; \
+    nltk.download('punkt', download_dir='/var/www/nltk_data'); \
+    nltk.download('stopwords', download_dir='/var/www/nltk_data');"

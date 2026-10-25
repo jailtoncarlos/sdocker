@@ -1,0 +1,247 @@
+A seguir, descrevem-se os oito arquivos Dockerfile na ordem dos estágios de build, utilizando as nomenclaturas de arquivo, estágio (AS …), variável de build (ARG …) e imagem de origem conforme indicado.
+
+---
+
+## 1. Dockerfile-python-runtime
+
+**Estágio (AS)**: `sdocker-python-runtime`
+**ARG de Origem**: `SDOCKER_PYTHON_IMAGE`
+**Imagem de Origem (padrão)**: `python:3.12-slim-bullseye:latest`
+
+**Descrição:**
+Este Dockerfile configura o ambiente mínimo de runtime Python. Herda de `python:3.12-slim-bullseye`, instala apenas os pacotes essenciais (`pip`, `python3-setuptools`, `python3-wheel`, `locales`) para que o Python funcione corretamente, configura `pt_BR.UTF-8` e, por fim, atualiza o `pip` e instala o Poetry. O resultado é uma imagem enxuta que serve como base para os estágios subsequentes.
+
+---
+
+## 2. Dockerfile-python-runtime-user
+
+**Estágio (AS)**: `sdocker-python-runtime-user`
+**ARG de Origem**: `SDOCKER_PYTHON_RUNTIME_IMAGE`
+**Imagem de Origem (padrão)**: `sdocker-python-runtime:latest`
+
+**Descrição:**
+A imagem de `sdocker-python-runtime-user` estende `sdocker-python-runtime:latest`, adicionando um usuário configurável com UID, GID e nome fornecidos via argumentos (`USER_UID`, `USER_GID`, `USER_NAME`). Instala `openssh-server`, `openssh-client`, `procps` e `sudo`, cria o grupo e o usuário, adiciona-o ao grupo `root`, configura sudo sem senha e define uma senha padrão (“mudar\@123”). Caso `USER_NAME="customuser"`, gera também uma chave SSH dedicada (`ed25519`). Por fim, atualiza o `pip` e instala `pre-commit`.
+
+---
+
+## 3. Dockerfile-python-build
+
+**Estágio (AS)**: `sdocker-python-build`
+**ARG de Origem**: `SDOCKER_PYTHON_RUNTIME_USER_IMAGE`
+**Imagem de Origem (padrão)**: `sdocker-python-runtime-user:latest`
+
+**Descrição:**
+A imagem de `sdocker-python-build` herda de `sdocker-python-runtime-user:latest` e adiciona ferramentas de compilação (como `build-essential`, `gfortran`, `swig`, `libffi-dev`, `libssl-dev`) e bibliotecas de desenvolvimento para suportar a instalação de pacotes Python que contenham código nativo. Também instala dependências para conexão com bancos de dados (`libpq-dev`, `freetds-dev`), autenticação LDAP/SASL (`libldap2-dev`, `libsasl2-dev`), processamento de imagens (`libjpeg-dev`, `libfreetype6-dev`, `zlib1g-dev`), conversão de PDF/PostScript (`ghostscript`, `qpdf`) e ferramentas auxiliares de linha de comando (`wget`, `curl`, `git`, `vim`, `cron`, `openssh-server`, `ntpdate`).
+
+---
+
+## 4. Dockerfile-python-wkhtmltopdf
+
+**Estágio (AS)**: `sdocker-python-wkhtmltopdf`
+**ARG de Origem**: `SDOCKER_PYTHON_BUILD_IMAGE`
+**Imagem de Origem (padrão)**: `sdocker-python-build:latest`
+
+**Descrição:**
+Esta imagem, nomeada `sdocker-python-wkhtmltopdf`, herda de `sdocker-python-build:latest` e instala o binário `wkhtmltopdf` (versão 0.12.4). O Dockerfile faz o download do tarball, extrai os executáveis para `/usr/bin` e executa `fc-cache -f -v` para atualizar o cache de fontes do sistema, garantindo que o utilitário funcione corretamente em modo headless.
+
+---
+
+## 5. Dockerfile-python-dev-complete
+
+**Estágio (AS)**: `sdocker-python-dev-complete`
+**ARG de Origem**: `SDOCKER_PYTHON_WKHTMLTOPDF_IMAGE`
+**Imagem de Origem (padrão)**: `sdocker-python-wkhtmltopdf:latest`
+
+**Descrição:**
+A imagem `sdocker-python-dev-complete` reúne todas as dependências adicionais de desenvolvimento Python. Partindo de `sdocker-python-wkhtmltopdf:latest`, instala bibliotecas para processamento de XML/XSLT e segurança (`libxml2-dev`, `libxslt1-dev`, `libxmlsec1-dev`), bibliotecas de álgebra linear científica (`libblas-dev`, `liblapack-dev`, `libatlas-base-dev`), dependências gráficas e X11 (`libglu1-mesa`, `libcairo2`, `libcairo2-dev`, `libcups2`, `libdbus-glib-1-2`, `libxinerama1`, `libsm6`, `libx11-dev`, `libxext-dev`, `libxrender-dev`, `libgdk-pixbuf2.0-0`, `libpango-1.0-0`, `libpangocairo-1.0-0`, `fontconfig`, `libfontconfig1-dev`, `ttf-mscorefonts-installer`), além de ferramentas de sincronização de tempo e limpeza de cache (`ntpdate`, `tmpreaper`, `shared-mime-info`). Por último, instala o pacote Python `nltk` e faz o download dos corpora “punkt” e “stopwords”.
+
+---
+
+## 6. Dockerfile-python-app
+
+**Estágio (AS)**: `sdocker-python-app`
+**ARG de Origem**: `SDOCKER_PYTHON_DEV_COMPLETE_IMAGE`
+**Imagem de Origem (padrão)**: `sdocker-python-dev-complete:latest`
+
+**Descrição:**
+O Dockerfile `sdocker-python-app` é destinado ao ambiente de desenvolvimento da aplicação Python. A partir de `sdocker-python-dev-complete:latest`, recebe como argumentos:
+
+* `WORK_DIR` (diretório de trabalho dentro do contêiner),
+* `REQUIREMENTS_FILE` (nome do arquivo de dependências, ex: `requirements.txt`),
+* `USER_NAME` (nome do usuário já existente no contêiner).
+
+Este arquivo marca `$WORK_DIR` como “safe” para o Git, define-o em `WORKDIR`, troca para o usuário especificado, copia todo o código-fonte para `$WORK_DIR` (com a propriedade do usuário), instala dependências Python com `pip install --user` usando cache em `/opt/.cache`, instala `django-extensions`, ajusta a variável `PATH` para incluir `$HOME/.local/bin` e define o `CMD` para um “dev container” que exibe uma mensagem e entra em `sleep infinity`, mantendo o contêiner ativo.
+
+---
+
+## 7. Dockerfile-python-app-playwright
+
+**Estágio (AS)**: `sdocker-python-app-playwright`
+**ARG de Origem**: `SDOCKER_PYTHON_APP_IMAGE`
+**Imagem de Origem (padrão)**: `sdocker-python-app:latest`
+
+**Descrição:**
+A partir de `sdocker-python-app:latest`, o Dockerfile `sdocker-python-app-playwright` instala o pacote Python `playwright` e executa `playwright install --with-deps`, baixando os binários dos navegadores suportados (Chromium, Firefox e WebKit) juntamente com dependências de sistema específicas para cada engine. Resulta em uma imagem pronta para executar testes end-to-end com Playwright.
+
+---
+
+## 8. Dockerfile-python-app-chrome
+
+**Estágio (AS)**: `sdocker-python-app-chrome`
+**ARG de Origem**: `SDOCKER_PYTHON_APP_PLAYWRIGHT_IMAGE`
+**Imagem de Origem (padrão)**: `sdocker-python-app-playwright:latest`
+
+**Descrição:**
+O Dockerfile de `sdocker-python-app-chrome` herda de `sdocker-python-app-playwright:latest` e instala o navegador Google Chrome (pacote `google-chrome-stable`) e o `ChromeDriver` correspondente. Adiciona a chave GPG oficial do Google e o repositório “stable” do Chrome, em seguida faz `apt-get install` do Chrome, limpa caches APT e baixa o `chromedriver` compatível com a versão instalada do navegador, colocando-o em `/usr/local/bin`. Esta imagem final contém tanto o ambiente Python + Playwright quanto o Chrome e o ChromeDriver, permitindo testes automatizados em Chrome headless.
+
+---
+
+# Tabela Resumida dos Arquivos Dockerfile
+
+|Estágios| **Nome do arquivo**                       | **Nomenclatura do estágio (AS …)** | **Imagem de origem (…\:latest ou específica)** | **Variável de ambiente para imagem de origem (ARG …)** | **Descrição resumida**                                                                                                                                                        |
+| ------ | ----------------------------------------- | ---------------------------------- | ---------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|1       | Dockerfile-python-runtime                 | `sdocker-python-runtime`           | `python:3.12-slim-bullseye`                    | `SDOCKER_PYTHON_IMAGE`                                 | Fornece ambiente mínimo de runtime Python, instala pip, setuptools, wheel, configura localidade `pt_BR.UTF-8` e instala Poetry.                                               |
+|2       | Dockerfile-python-runtime-user            | `sdocker-python-runtime-user`      | `sdocker-python-runtime:latest`                | `SDOCKER_PYTHON_RUNTIME_IMAGE`                         | Estende a imagem de runtime, adiciona usuário configurável (`USER_UID`, `USER_GID`, `USER_NAME`), gera chave SSH se aplicável e instala `pre-commit`.                         |
+|3       | Dockerfile-python-build                   | `sdocker-python-build`             | `sdocker-python-runtime-user:latest`           | `SDOCKER_PYTHON_RUNTIME_USER_IMAGE`                    | Adiciona ferramentas de compilação (build-essential, gfortran, swig, libffi-dev, libssl-dev) e utilitários (wget, curl, git, vim, cron, openssh-server, ntpdate).             |
+|4       | Dockerfile-python-wkhtmltopdf             | `sdocker-python-wkhtmltopdf`       | `sdocker-python-build:latest`                  | `SDOCKER_PYTHON_BUILD_IMAGE`                           | Instala o utilitário `wkhtmltopdf` (versão 0.12.4), extraindo os binários para `/usr/bin` e configurando caches de fontes.                                                    |
+|5       | Dockerfile-python-dev-complete            | `sdocker-python-dev-complete`      | `sdocker-python-wkhtmltopdf:latest`            | `SDOCKER_PYTHON_WKHTMLTOPDF_IMAGE`                     | Reúne dependências completas de desenvolvimento Python: bibliotecas para XML/XSLT (`libxml2-dev`, `libxslt1-dev`, `libxmlsec1-dev`), ferramentas de tempo e NLTK.             |
+|6       | Dockerfile-python-app                     | `sdocker-python-app`               | `sdocker-python-dev-complete:latest`           | `SDOCKER_PYTHON_DEV_COMPLETE_IMAGE`                    | Ponto de partida para desenvolvimento de aplicação Python: configura `WORKDIR`, ajusta PATH, define `CMD` de “dev container” em sleep infinito.                               |
+|7       | Dockerfile-python-app-playwright          | `sdocker-python-app-playwright`    | `sdocker-python-app:latest`                    | `SDOCKER_CHROME_IMAGE`                                 | A partir de sdocker-python-app, instala o pacote Python playwright e faz playwright install --with-deps para baixar browser engines (Chromium, Firefox, WebKit).              |
+|8       | Dockerfile-python-app-chrome              | `sdocker-python_app-chrome`        | `sdocker-python-app-playwright:latest`         | `SDOCKER_DEV_COMPLETE_IMAGE`                           | Instala Google Chrome e ChromeDriver: adiciona repositório GPG do Google, instala google-chrome-stable, limpa caches e baixa chromedriver compatível com a versão do Chrome.  |
+
+---
+
+Cada linha da tabela acima resume o propósito de cada Dockerfile, o estágio nomeado via `AS`, a variável de ambiente usada para referenciar sua imagem de origem e a descrição básica do que aquele arquivo adiciona ao fluxo de build.
+
+
+---
+# Instruções para gerar as imagens**
+A seguir, apresentam-se as instruções passo a passo para gerar, em sequência, cada uma das imagens Docker conforme a ordem dos estágios descritos anteriormente. Os comandos devem ser executados no diretório que contém todos os Dockerfiles.
+
+---
+
+1. **Construir a imagem `sdocker-python-runtime`**
+
+   * **Descrição**: cria o ambiente mínimo de runtime Python.
+   * **Comando**:
+
+   ```bash
+   docker build \
+     --build-arg SDOCKER_PYTHON_IMAGE=python:3.12-slim-bullseye \
+     -f Dockerfile-python-runtime \
+     -t sdocker-python-runtime:latest .
+   ```
+
+2. **Construir a imagem `sdocker-python-runtime-user`**
+
+   * **Descrição**: estende o runtime para criar um usuário configurável.
+   * **Exemplo de valores para UID/GID/NOME**:
+
+     * `USER_UID=1000`
+     * `USER_GID=1000`
+     * `USER_NAME=developer`
+   * **Comando**:
+
+   ```bash
+   docker build \
+     --build-arg SDOCKER_PYTHON_RUNTIME_IMAGE=sdocker-python-runtime:latest \
+     --build-arg USER_UID=1000 \
+     --build-arg USER_GID=1000 \
+     --build-arg USER_NAME=developer \
+     -f Dockerfile-python-runtime-user \
+     -t sdocker-python-runtime-user:latest .
+   ```
+
+3. **Construir a imagem `sdocker-python-build`**
+
+   * **Descrição**: adiciona ferramentas de compilação e utilitários ao ambiente de runtime-usuario.
+   * **Comando**:
+
+   ```bash
+   docker build \
+     --build-arg SDOCKER_PYTHON_RUNTIME_USER_IMAGE=sdocker-python-runtime-user:latest \
+     -f Dockerfile-python-build \
+     -t sdocker-python-build:latest .
+   ```
+
+4. **Construir a imagem `sdocker-python-wkhtmltopdf`**
+
+   * **Descrição**: instala o utilitário `wkhtmltopdf` sobre o ambiente de build.
+   * **Comando**:
+
+   ```bash
+   docker build \
+     --build-arg SDOCKER_PYTHON_BUILD_IMAGE=sdocker-python-build:latest \
+     -f Dockerfile-python-wkhtmltopdf \
+     -t sdocker-python-wkhtmltopdf:latest .
+   ```
+
+5. **Construir a imagem `sdocker-python-dev-complete`**
+
+   * **Descrição**: agrega todas as dependências de desenvolvimento (XML, XSLT, álgebra linear, bibliotecas gráficas, NLTK, etc.).
+   * **Comando**:
+
+   ```bash
+   docker build \
+     --build-arg SDOCKER_PYTHON_WKHTMLTOPDF_IMAGE=sdocker-python-wkhtmltopdf:latest \
+     -f Dockerfile-python-dev-complete \
+     -t sdocker-python-dev-complete:latest .
+   ```
+
+6. **Construir a imagem `sdocker-python-app`**
+
+   * **Descrição**: ambiente de desenvolvimento da aplicação Python, define `WORKDIR`, instala dependências com cache e mantém contêiner em “dev mode”.
+   * **Exemplo de valores**:
+
+     * `WORK_DIR=/home/developer/app`
+     * `REQUIREMENTS_FILE=requirements.txt`
+     * `USER_NAME=developer`
+   * **Comando**:
+
+   ```bash
+   docker build \
+     --build-arg SDOCKER_PYTHON_DEV_COMPLETE_IMAGE=sdocker-python-dev-complete:latest \
+     --build-arg WORK_DIR=/home/developer/app \
+     --build-arg REQUIREMENTS_FILE=requirements.txt \
+     --build-arg USER_NAME=developer \
+     -f Dockerfile-python-app \
+     -t sdocker-python-app:latest .
+   ```
+
+7. **Construir a imagem `sdocker-python-app-playwright`**
+
+   * **Descrição**: instala o `playwright` e baixa os binários de navegadores (Chromium, Firefox, WebKit) sobre a imagem de “app”.
+   * **Comando**:
+
+   ```bash
+   docker build \
+     --build-arg SDOCKER_PYTHON_APP_IMAGE=sdocker-python-app:latest \
+     -f Dockerfile-python-app-playwright \
+     -t sdocker-python-app-playwright:latest .
+   ```
+
+8. **Construir a imagem `sdocker-python-app-chrome`**
+
+   * **Descrição**: instala Google Chrome e ChromeDriver sobre a imagem “app-playwright”, configurando o repositório oficial do Google.
+   * **Comando**:
+
+   ```bash
+   docker build \
+     --build-arg SDOCKER_PYTHON_APP_PLAYWRIGHT_IMAGE=sdocker-python-app-playwright:latest \
+     -f Dockerfile-python-app-chrome \
+     -t sdocker-python-app-chrome:latest .
+   ```
+
+---
+
+### Observações finais
+
+* Sempre substituir os valores de `USER_UID`, `USER_GID`, `USER_NAME`, `WORK_DIR` e `REQUIREMENTS_FILE` pelos valores que façam sentido ao projeto em questão.
+* Os comandos acima consideram que todos os Dockerfiles encontram-se no diretório corrente (`.`). Caso estejam em subpastas, ajustar o caminho após a flag `-f`.
+* A opção `:latest` é usada como tag padrão, mas pode-se empregar qualquer outra tag (por exemplo, `:v1.0`) desde que se mantenha coerência ao referenciar a imagem de origem nos estágios subsequentes.
+* Após cada comando de build, recomenda-se verificar se a imagem gerada existe localmente, executando:
+
+  ```bash
+  docker images | grep <nome-da-imagem>
+  ```
+* Caso algum estágio falhe, revisar a mensagem de erro e ajustar eventuais dependências faltantes ou nomes incorretos de arquivos.
